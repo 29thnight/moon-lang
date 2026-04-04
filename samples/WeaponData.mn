@@ -1,0 +1,10 @@
+using UnityEngine
+
+asset WeaponData : ScriptableObject {
+    serialize weaponName: String = "Unknown"
+    serialize damage: Int = 10
+    serialize attackSpeed: Float = 1.0
+    serialize icon: Sprite?
+
+    func dps(): Float = damage / attackSpeed
+}

@@ -1,0 +1,18 @@
+using UnityEngine
+
+component Coin : MonoBehaviour {
+    serialize rotateSpeed: Float = 90.0
+    serialize scoreValue: Int = 10
+
+    update {
+        transform.rotate(vec3(0, rotateSpeed * Time.deltaTime, 0))
+    }
+
+    onTriggerEnter(other: Collider) {
+        if other.compareTag("Player") {
+            val player = other.get<PlayerScore>()
+            player?.addScore(scoreValue)
+            Destroy(gameObject)
+        }
+    }
+}

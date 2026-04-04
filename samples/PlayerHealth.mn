@@ -1,0 +1,30 @@
+using UnityEngine
+
+component PlayerHealth : MonoBehaviour {
+    serialize maxHp: Int = 100
+    serialize invincibleTime: Float = 1.0
+
+    var hp: Int = 100
+    var invincible: Bool = false
+
+    func damage(amount: Int) {
+        if invincible { return }
+
+        hp -= amount
+        start hitInvincible()
+
+        if hp <= 0 {
+            die()
+        }
+    }
+
+    coroutine hitInvincible() {
+        invincible = true
+        wait invincibleTime.s
+        invincible = false
+    }
+
+    func die() {
+        gameObject.setActive(false)
+    }
+}

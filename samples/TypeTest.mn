@@ -1,0 +1,16 @@
+using UnityEngine
+
+component TypeTest : MonoBehaviour {
+    serialize name: String = "test"
+    var items: List<Int> = null
+    var lookup: Map<String, Int> = null
+    var tags: Set<String> = null
+
+    func getItems(): List<Int> {
+        return items
+    }
+
+    func getKeys(): Seq<String> {
+        return null
+    }
+}

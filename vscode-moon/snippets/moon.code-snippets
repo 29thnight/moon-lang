@@ -1,0 +1,175 @@
+{
+  "Component": {
+    "prefix": "comp",
+    "body": [
+      "using UnityEngine",
+      "",
+      "component ${1:MyComponent} : MonoBehaviour {",
+      "    $0",
+      "}"
+    ],
+    "description": "Moon component declaration"
+  },
+  "Asset": {
+    "prefix": "asset",
+    "body": [
+      "using UnityEngine",
+      "",
+      "asset ${1:MyAsset} : ScriptableObject {",
+      "    serialize ${2:name}: ${3:String} = ${4:\"default\"}",
+      "    $0",
+      "}"
+    ],
+    "description": "Moon ScriptableObject asset"
+  },
+  "Function": {
+    "prefix": "func",
+    "body": [
+      "func ${1:name}(${2}) {",
+      "    $0",
+      "}"
+    ],
+    "description": "Function declaration"
+  },
+  "Function with return type": {
+    "prefix": "funcr",
+    "body": [
+      "func ${1:name}(${2}): ${3:Int} {",
+      "    return $0",
+      "}"
+    ],
+    "description": "Function with return type"
+  },
+  "Expression body function": {
+    "prefix": "funce",
+    "body": "func ${1:name}(): ${2:Bool} = ${0:true}",
+    "description": "Expression-body function"
+  },
+  "Coroutine": {
+    "prefix": "cor",
+    "body": [
+      "coroutine ${1:name}() {",
+      "    wait ${2:1.0s}",
+      "    $0",
+      "}"
+    ],
+    "description": "Coroutine declaration"
+  },
+  "Serialize field": {
+    "prefix": "ser",
+    "body": "serialize ${1:name}: ${2:Float} = ${0:0.0}",
+    "description": "Serialized field (Inspector visible)"
+  },
+  "Require component": {
+    "prefix": "req",
+    "body": "require ${1:name}: ${0:Rigidbody}",
+    "description": "Required component (auto-resolved in Awake)"
+  },
+  "Optional component": {
+    "prefix": "opt",
+    "body": "optional ${1:name}: ${0:Animator}",
+    "description": "Optional component (nullable)"
+  },
+  "Awake block": {
+    "prefix": "awake",
+    "body": [
+      "awake {",
+      "    $0",
+      "}"
+    ],
+    "description": "Awake lifecycle block"
+  },
+  "Start block": {
+    "prefix": "start",
+    "body": [
+      "start {",
+      "    $0",
+      "}"
+    ],
+    "description": "Start lifecycle block"
+  },
+  "Update block": {
+    "prefix": "update",
+    "body": [
+      "update {",
+      "    $0",
+      "}"
+    ],
+    "description": "Update lifecycle block"
+  },
+  "FixedUpdate block": {
+    "prefix": "fixed",
+    "body": [
+      "fixedUpdate {",
+      "    $0",
+      "}"
+    ],
+    "description": "FixedUpdate lifecycle block"
+  },
+  "OnTriggerEnter": {
+    "prefix": "ontrig",
+    "body": [
+      "onTriggerEnter(${1:other}: Collider) {",
+      "    $0",
+      "}"
+    ],
+    "description": "OnTriggerEnter lifecycle block"
+  },
+  "OnCollisionEnter": {
+    "prefix": "oncol",
+    "body": [
+      "onCollisionEnter(${1:collision}: Collision) {",
+      "    $0",
+      "}"
+    ],
+    "description": "OnCollisionEnter lifecycle block"
+  },
+  "If statement": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition} {",
+      "    $0",
+      "}"
+    ],
+    "description": "If statement (no parentheses)"
+  },
+  "If-else statement": {
+    "prefix": "ife",
+    "body": [
+      "if ${1:condition} {",
+      "    $2",
+      "} else {",
+      "    $0",
+      "}"
+    ],
+    "description": "If-else statement"
+  },
+  "When statement": {
+    "prefix": "when",
+    "body": [
+      "when ${1:subject} {",
+      "    ${2:Pattern} => ${3:action()}",
+      "    else => ${0:default()}",
+      "}"
+    ],
+    "description": "When (pattern matching) statement"
+  },
+  "For loop": {
+    "prefix": "for",
+    "body": [
+      "for ${1:item} in ${2:collection} {",
+      "    $0",
+      "}"
+    ],
+    "description": "For-in loop"
+  },
+  "Listen event": {
+    "prefix": "listen",
+    "body": [
+      "listen ${1:button.onClick} {",
+      "    $0",
+      "}"
+    ],
+    "description": "Listen to UnityEvent"
+  }
+}

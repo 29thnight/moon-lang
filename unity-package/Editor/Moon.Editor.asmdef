@@ -1,0 +1,14 @@
+{
+    "name": "Moon.Editor",
+    "rootNamespace": "Moon.Editor",
+    "references": ["Moon.Runtime"],
+    "includePlatforms": ["Editor"],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

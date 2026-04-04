@@ -1,0 +1,10 @@
+using UnityEngine
+using UnityEngine.Playables
+
+component #SCRIPTNAME# : PlayableAsset {
+    func createPlayable(graph: PlayableGraph, owner: GameObject): Playable {
+        intrinsic {
+            return ScriptPlayable<#SCRIPTNAME#Behaviour>.Create(graph);
+        }
+    }
+}

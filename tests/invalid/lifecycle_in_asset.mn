@@ -1,0 +1,4 @@
+asset BadAsset : ScriptableObject {
+    update {
+    }
+}

@@ -1,0 +1,5 @@
+@targets(Method, Property)
+attribute Cooldown(
+    val duration: Float,
+    val resetOnHit: Bool
+)

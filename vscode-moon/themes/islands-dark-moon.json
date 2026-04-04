@@ -1,0 +1,156 @@
+{
+  "name": "Islands Dark (Moon)",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#191a1c",
+    "editor.foreground": "#bcbec4",
+    "editorCursor.foreground": "#ced0d6",
+    "editorLineNumber.foreground": "#4b5059",
+    "editorLineNumber.activeForeground": "#a1a3ab",
+    "editor.lineHighlightBackground": "#1f2024",
+    "editor.selectionBackground": "#2d543f",
+    "editorIndentGuide.background1": "#323438",
+    "editorBracketMatch.background": "#43454a",
+    "editorBracketMatch.border": "#43454a",
+    "sideBar.background": "#1e1f22",
+    "sideBar.foreground": "#bcbec4",
+    "activityBar.background": "#1e1f22",
+    "titleBar.activeBackground": "#1e1f22",
+    "statusBar.background": "#1e1f22",
+    "tab.activeBackground": "#191a1c",
+    "tab.inactiveBackground": "#1e1f22",
+    "panel.background": "#191a1c",
+    "terminal.background": "#191a1c",
+    "terminal.foreground": "#bcbec4",
+    "list.activeSelectionBackground": "#25324d",
+    "list.hoverBackground": "#2b2d30",
+    "input.background": "#27282b",
+    "dropdown.background": "#27282b",
+    "focusBorder": "#375fad",
+    "editorError.foreground": "#f75464",
+    "editorWarning.foreground": "#f2c55c",
+    "editorInfo.foreground": "#857042"
+  },
+  "tokenColors": [
+    {
+      "name": "Comment",
+      "scope": ["comment", "comment.line", "comment.block"],
+      "settings": { "foreground": "#7a7e85" }
+    },
+    {
+      "name": "Keyword",
+      "scope": ["keyword", "keyword.control", "keyword.other", "keyword.operator.new", "storage.modifier"],
+      "settings": { "foreground": "#cf8e6d" }
+    },
+    {
+      "name": "Storage type (primitive types, type annotations)",
+      "scope": ["storage.type"],
+      "settings": { "foreground": "#cf8e6d" }
+    },
+    {
+      "name": "String",
+      "scope": ["string", "string.quoted"],
+      "settings": { "foreground": "#6aab73" }
+    },
+    {
+      "name": "String escape",
+      "scope": ["constant.character.escape"],
+      "settings": { "foreground": "#cf8e6d" }
+    },
+    {
+      "name": "String interpolation punctuation",
+      "scope": ["punctuation.definition.interpolation"],
+      "settings": { "foreground": "#cf8e6d" }
+    },
+    {
+      "name": "Number",
+      "scope": ["constant.numeric"],
+      "settings": { "foreground": "#2aacb8" }
+    },
+    {
+      "name": "Language constant (true, false, null)",
+      "scope": ["constant.language"],
+      "settings": { "foreground": "#cf8e6d" }
+    },
+    {
+      "name": "Type name (class, interface, enum)",
+      "scope": ["entity.name.type", "entity.name.type.class", "entity.name.type.enum"],
+      "settings": { "foreground": "#bcbec4" }
+    },
+    {
+      "name": "Inherited class / support class (Unity types)",
+      "scope": ["support.class", "entity.other.inherited-class"],
+      "settings": { "foreground": "#16baac" }
+    },
+    {
+      "name": "Type parameter",
+      "scope": ["entity.name.type.parameter"],
+      "settings": { "foreground": "#16baac" }
+    },
+    {
+      "name": "Function declaration",
+      "scope": ["entity.name.function", "support.function"],
+      "settings": { "foreground": "#56a8f5" }
+    },
+    {
+      "name": "Function call",
+      "scope": ["entity.name.function.call"],
+      "settings": { "foreground": "#57aaf7" }
+    },
+    {
+      "name": "Annotation / Decorator",
+      "scope": ["entity.name.decorator", "entity.name.function.decorator", "punctuation.definition.annotation"],
+      "settings": { "foreground": "#b3ae60" }
+    },
+    {
+      "name": "Instance field / property",
+      "scope": ["variable.other.property", "variable.other.object.property"],
+      "settings": { "foreground": "#c77dbb" }
+    },
+    {
+      "name": "Constant variable",
+      "scope": ["variable.other.constant"],
+      "settings": { "foreground": "#c77dbb", "fontStyle": "italic" }
+    },
+    {
+      "name": "Variable - this",
+      "scope": ["variable.language.this"],
+      "settings": { "foreground": "#cf8e6d" }
+    },
+    {
+      "name": "Enum member",
+      "scope": ["variable.other.enummember"],
+      "settings": { "foreground": "#c77dbb", "fontStyle": "italic" }
+    },
+    {
+      "name": "Operator",
+      "scope": ["keyword.operator"],
+      "settings": { "foreground": "#bcbec4" }
+    },
+    {
+      "name": "Punctuation (braces, brackets, parens, comma, dot, semicolon)",
+      "scope": ["punctuation", "punctuation.separator", "punctuation.bracket"],
+      "settings": { "foreground": "#bcbec4" }
+    },
+    {
+      "name": "Default identifier / variable",
+      "scope": ["variable", "variable.other", "meta.object-literal.key"],
+      "settings": { "foreground": "#bcbec4" }
+    },
+    {
+      "name": "Import path",
+      "scope": ["keyword.control.import"],
+      "settings": { "foreground": "#cf8e6d" }
+    },
+    {
+      "name": "Lifecycle keywords (Moon-specific)",
+      "scope": ["entity.name.function.lifecycle"],
+      "settings": { "foreground": "#56a8f5" }
+    },
+    {
+      "name": "Nullable operator",
+      "scope": ["keyword.operator.nullable"],
+      "settings": { "foreground": "#bcbec4" }
+    }
+  ]
+}

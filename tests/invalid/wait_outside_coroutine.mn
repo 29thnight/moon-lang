@@ -1,0 +1,5 @@
+component BadComponent : MonoBehaviour {
+    func doStuff() {
+        wait 1.0s
+    }
+}

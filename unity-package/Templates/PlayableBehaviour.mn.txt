@@ -1,0 +1,6 @@
+using UnityEngine.Playables
+
+class #SCRIPTNAME# : PlayableBehaviour {
+    func processFrame(playable: Playable, info: FrameData) {
+    }
+}

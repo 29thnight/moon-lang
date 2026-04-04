@@ -1,0 +1,53 @@
+using UnityEngine
+
+enum EnemyState {
+    Idle,
+    Chase,
+    Attack,
+    Dead
+}
+
+component EnemyAI : MonoBehaviour {
+    serialize chaseRange: Float = 10.0
+    serialize attackRange: Float = 2.0
+
+    var state: EnemyState = EnemyState.Idle
+    private target: Transform?
+
+    start {
+        target = find<PlayerController>()?.transform
+    }
+
+    update {
+        val t = target ?: return
+
+        val dist = Vector3.distance(transform.position, t.position)
+
+        when {
+            state == EnemyState.Dead => return
+            dist <= attackRange => state = EnemyState.Attack
+            dist <= chaseRange => state = EnemyState.Chase
+            else => state = EnemyState.Idle
+        }
+
+        when state {
+            EnemyState.Idle => idle()
+            EnemyState.Chase => chase(t)
+            EnemyState.Attack => attack(t)
+            EnemyState.Dead => {}
+        }
+    }
+
+    private func idle() {
+        // 대기 로직
+    }
+
+    private func chase(target: Transform) {
+        val dir = (target.position - transform.position).normalized
+        transform.position += dir * 3.0 * Time.deltaTime
+    }
+
+    private func attack(target: Transform) {
+        // 공격 로직
+    }
+}

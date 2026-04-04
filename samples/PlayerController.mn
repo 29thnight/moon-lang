@@ -1,0 +1,22 @@
+using UnityEngine
+
+component PlayerController : MonoBehaviour {
+    @header("Movement")
+    serialize speed: Float = 5.0
+    serialize jumpForce: Float = 8.0
+
+    require rb: Rigidbody
+    optional animator: Animator
+
+    update {
+        val h = input.axis("Horizontal")
+        val v = input.axis("Vertical")
+        val move = vec3(h, 0, v)
+        rb.velocity = move * speed
+    }
+
+    func jump() {
+        rb.addForce(vec3(0, jumpForce, 0))
+        animator?.play("Jump")
+    }
+}

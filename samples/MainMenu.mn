@@ -1,0 +1,18 @@
+using UnityEngine
+using UnityEngine.UI
+using UnityEngine.SceneManagement
+
+component MainMenu : MonoBehaviour {
+    serialize startButton: Button
+    serialize quitButton: Button
+
+    start {
+        listen startButton.onClick {
+            SceneManager.loadScene("Game")
+        }
+
+        listen quitButton.onClick {
+            Application.quit()
+        }
+    }
+}
