@@ -41,38 +41,13 @@ namespace Moon.Editor
             }
 
             string overridePath = MoonProjectSettings.GetCompilerPathOverride();
-            if (!string.IsNullOrWhiteSpace(overridePath) && File.Exists(overridePath))
-            {
-                _resolvedPath = overridePath;
-                return _resolvedPath;
-            }
-
             string configPath = MoonProjectSettings.GetCompilerPath();
-            if (!string.IsNullOrWhiteSpace(configPath) && configPath != "moonc" && File.Exists(configPath))
-            {
-                _resolvedPath = configPath;
-                return _resolvedPath;
-            }
-
-            foreach (string candidate in GetBundledCompilerCandidates())
-            {
-                if (File.Exists(candidate))
-                {
-                    _resolvedPath = candidate;
-                    return _resolvedPath;
-                }
-            }
-
-            foreach (string candidate in GetDevelopmentCompilerCandidates())
-            {
-                if (File.Exists(candidate))
-                {
-                    _resolvedPath = candidate;
-                    return _resolvedPath;
-                }
-            }
-
-            _resolvedPath = "moonc";
+            _resolvedPath = MoonCompilerResolver.ResolveCompilerPath(
+                overridePath,
+                configPath,
+                GetBundledCompilerCandidates(),
+                GetDevelopmentCompilerCandidates(),
+                File.Exists);
             return _resolvedPath;
         }
 
@@ -94,29 +69,26 @@ namespace Moon.Editor
 
             if (!string.IsNullOrWhiteSpace(result?.Stderr))
             {
-                Debug.LogError($"[Moon] {result.Stderr.Trim()}");
+                LogUnityMessage(LogType.Error, $"[Moon] {result.Stderr.Trim()}");
             }
             else if (!string.IsNullOrWhiteSpace(result?.Stdout))
             {
-                Debug.LogError($"[Moon] {result.Stdout.Trim()}");
+                LogUnityMessage(LogType.Error, $"[Moon] {result.Stdout.Trim()}");
             }
         }
 
         public static void LogDiagnostic(MoonJsonDiagnostic diagnostic, string fallbackPath = null)
         {
-            string displayPath = GetDisplayPath(diagnostic.file, fallbackPath);
-            int line = Math.Max(1, diagnostic.line);
-            int col = Math.Max(1, diagnostic.col);
-            string message = $"{displayPath}({line},{col}): {diagnostic.severity} [{diagnostic.code}] {diagnostic.message}";
+            string message = MoonDiagnosticFormatter.FormatDiagnosticMessage(
+                MoonProjectSettings.GetProjectRoot(),
+                diagnostic,
+                fallbackPath);
+            LogUnityMessage(diagnostic?.severity == "warning" ? LogType.Warning : LogType.Error, message);
+        }
 
-            if (diagnostic.severity == "warning")
-            {
-                Debug.LogWarning(message);
-            }
-            else
-            {
-                Debug.LogError(message);
-            }
+        private static void LogUnityMessage(LogType logType, string message)
+        {
+            Debug.LogFormat(logType, LogOption.NoStacktrace, null, "{0}", message);
         }
 
         private static CompileResult RunCompiler(string compilerPath, string arguments)
@@ -178,35 +150,6 @@ namespace Moon.Editor
             }
         }
 
-        private static string GetDisplayPath(string reportedPath, string fallbackPath)
-        {
-            string projectRoot = MoonProjectSettings.GetProjectRoot();
-            string pathToFormat = reportedPath;
-
-            if (string.IsNullOrWhiteSpace(pathToFormat))
-            {
-                pathToFormat = fallbackPath;
-            }
-
-            if (string.IsNullOrWhiteSpace(pathToFormat))
-            {
-                return "Unknown.mn";
-            }
-
-            try
-            {
-                string fullPath = Path.IsPathRooted(pathToFormat)
-                    ? pathToFormat
-                    : Path.Combine(projectRoot, pathToFormat);
-                string relativePath = Path.GetRelativePath(projectRoot, fullPath);
-                return relativePath.Replace('\\', '/');
-            }
-            catch
-            {
-                return pathToFormat.Replace('\\', '/');
-            }
-        }
-
         private static IEnumerable<string> GetBundledCompilerCandidates()
         {
             var candidates = new List<string>();
@@ -246,10 +189,10 @@ namespace Moon.Editor
             string repoRoot = Path.GetFullPath(Path.Combine(packageRoot, ".."));
             return new[]
             {
-                Path.Combine(repoRoot, "target", "release", "moonc.exe"),
-                Path.Combine(repoRoot, "target", "release", "moonc"),
                 Path.Combine(repoRoot, "target", "debug", "moonc.exe"),
                 Path.Combine(repoRoot, "target", "debug", "moonc"),
+                Path.Combine(repoRoot, "target", "release", "moonc.exe"),
+                Path.Combine(repoRoot, "target", "release", "moonc"),
             };
         }
 
@@ -269,6 +212,8 @@ namespace Moon.Editor
         public string file = "";
         public int line;
         public int col;
+        public int end_line;
+        public int end_col;
     }
 
     [Serializable]

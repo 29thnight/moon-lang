@@ -123,21 +123,25 @@ namespace Moon.Editor
         {
             string csPath = Path.Combine(fullOutputDir, className + ".cs");
             string metaPath = csPath + ".meta";
+            string sourceMapPath = Path.Combine(fullOutputDir, className + ".mnmap.json");
+            string sourceMapMetaPath = sourceMapPath + ".meta";
             bool removedAny = false;
 
             try
             {
-                if (File.Exists(csPath))
+                foreach (string artifactPath in new[] { csPath, metaPath, sourceMapPath, sourceMapMetaPath })
                 {
-                    File.Delete(csPath);
-                    Debug.Log($"[Moon] Deleted generated script: {csPath}");
-                    removedAny = true;
-                }
+                    if (!File.Exists(artifactPath))
+                    {
+                        continue;
+                    }
 
-                if (File.Exists(metaPath))
-                {
-                    File.Delete(metaPath);
+                    File.Delete(artifactPath);
                     removedAny = true;
+                    if (!artifactPath.EndsWith(".meta", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Debug.Log($"[Moon] Deleted generated artifact: {artifactPath}");
+                    }
                 }
             }
             catch (Exception ex)

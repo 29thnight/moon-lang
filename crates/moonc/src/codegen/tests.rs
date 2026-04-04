@@ -25,6 +25,12 @@ mod e2e {
     }
 
     #[test]
+    fn test_component_with_interfaces() {
+        let output = compile("component Foo : MonoBehaviour, IFoo, IBar {}");
+        assert!(output.contains("public class Foo : MonoBehaviour, IFoo, IBar"));
+    }
+
+    #[test]
     fn test_serialize_field() {
         let output = compile("component Foo : MonoBehaviour {\n  serialize speed: Float = 5.0\n}");
         assert!(output.contains("[SerializeField]"));
@@ -124,6 +130,30 @@ mod e2e {
     }
 
     #[test]
+    fn test_if_expression() {
+        // Simple if/else with single-expression branches is lowered to a ternary — no __moon_expr needed.
+        let output = compile("component Foo : MonoBehaviour {\n  func score(): Int = if hp <= 0 { 0 } else { 100 }\n}");
+        assert!(!output.contains("__moon_expr"), "simple ternary should not emit __moon_expr helper");
+        assert!(output.contains("return (hp <= 0 ? 0 : 100);"));
+    }
+
+    #[test]
+    fn test_if_expression_block_emits_helper() {
+        // Multi-statement block expression requires __moon_expr helper.
+        let output = compile("component Foo : MonoBehaviour {\n  func score(): Int = if hp <= 0 {\n    val x = 1\n    x\n  } else { 100 }\n}");
+        assert!(output.contains("private static T __moon_expr<T>(System.Func<T> thunk)"));
+        assert!(output.contains("__moon_expr(() =>"));
+    }
+
+    #[test]
+    fn test_when_expression() {
+        let output = compile("component Foo : MonoBehaviour {\n  func score(): Int = when state {\n    EnemyState.Idle => 0\n    else => 100\n  }\n}");
+        assert!(output.contains("return state switch"));
+        assert!(output.contains("EnemyState.Idle => 0"));
+        assert!(output.contains("_ => 100"));
+    }
+
+    #[test]
     fn test_for_range() {
         let output = compile("component Foo : MonoBehaviour {\n  func f() {\n    for i in 0 until 10 {\n      print(i)\n    }\n  }\n}");
         assert!(output.contains("for (int i = 0; i < 10; i++)"));
@@ -161,11 +191,24 @@ mod e2e {
     }
 
     #[test]
+    fn test_simple_string_interpolation() {
+        let output = compile("component Foo : MonoBehaviour {\n  func f() {\n    print(\"hello $name\")\n  }\n}");
+        assert!(output.contains("Debug.Log($\"hello {name}\")"));
+    }
+
+    #[test]
     fn test_asset_declaration() {
         let output = compile("asset WeaponData : ScriptableObject {\n  serialize damage: Int = 10\n}");
         assert!(output.contains("[CreateAssetMenu"));
         assert!(output.contains("public class WeaponData : ScriptableObject"));
         assert!(output.contains("[SerializeField]"));
+    }
+
+    #[test]
+    fn test_class_with_interfaces() {
+        let output = compile("class Helper : BaseHelper, IDisposable, IComparable {
+}");
+        assert!(output.contains("public class Helper : BaseHelper, IDisposable, IComparable"));
     }
 
     #[test]
@@ -178,12 +221,32 @@ mod e2e {
     }
 
     #[test]
+    fn test_parameterized_enum_declaration() {
+        let output = compile("enum Weapon(val damage: Int, val range: Float) {\n  Sword(10, 1.5),\n  Bow(7, 8.0)\n}");
+        assert!(output.contains("public enum Weapon"));
+        assert!(output.contains("public static class WeaponExtensions"));
+        assert!(output.contains("public static int Damage(this Weapon value)"));
+        assert!(output.contains("public static float Range(this Weapon value)"));
+        assert!(output.contains("case Weapon.Sword:"));
+        assert!(output.contains("return 10;"));
+        assert!(output.contains("return 1.5f;"));
+        assert!(output.contains("case Weapon.Bow:"));
+        assert!(output.contains("return 8.0f;"));
+    }
+
+    #[test]
     fn test_data_class() {
         let output = compile("data class DamageInfo(\n  val amount: Int,\n  val crit: Bool\n)");
         assert!(output.contains("[System.Serializable]"));
         assert!(output.contains("public class DamageInfo"));
-        assert!(output.contains("public int amount"));
-        assert!(output.contains("public bool crit"));
+        assert!(output.contains("public int amount;"));
+        assert!(output.contains("public bool crit;"));
+        assert!(output.contains("public DamageInfo(int amount, bool crit)"));
+        assert!(output.contains("this.amount = amount;"));
+        assert!(output.contains("public override bool Equals(object obj)"));
+        assert!(output.contains("public override int GetHashCode()"));
+        assert!(output.contains("public override string ToString()"));
+        assert!(output.contains(r#"return $"DamageInfo(amount={amount}, crit={crit})";"#));
     }
 
     #[test]

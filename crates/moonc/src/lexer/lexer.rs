@@ -1,4 +1,5 @@
 use crate::lexer::token::*;
+use std::collections::VecDeque;
 
 /// The Moon lexer — hand-written scanner for maximum control over
 /// string interpolation, duration literals, and multi-char operators.
@@ -10,6 +11,8 @@ pub struct Lexer {
     /// Stack for tracking string interpolation nesting.
     /// Each entry is the brace depth inside a `${}` interpolation.
     interp_brace_depth: Vec<u32>,
+    pending_tokens: VecDeque<Token>,
+    resume_string_after_interp: bool,
 }
 
 impl Lexer {
@@ -20,6 +23,8 @@ impl Lexer {
             line: 1,
             col: 1,
             interp_brace_depth: Vec::new(),
+            pending_tokens: VecDeque::new(),
+            resume_string_after_interp: false,
         }
     }
 
@@ -39,6 +44,16 @@ impl Lexer {
 
     /// Produce the next token.
     pub fn next_token(&mut self) -> Token {
+        if let Some(token) = self.pending_tokens.pop_front() {
+            return token;
+        }
+
+        if self.resume_string_after_interp {
+            self.resume_string_after_interp = false;
+            let start = self.make_pos();
+            return self.scan_string_continuation(start, start);
+        }
+
         self.skip_whitespace_and_comments();
 
         // If we're inside a string interpolation `${}` and hit `}`,
@@ -301,7 +316,6 @@ impl Lexer {
         self.advance(); // consume opening '"'
 
         let mut text = String::new();
-        let mut has_interpolation = false;
 
         loop {
             match self.peek() {
@@ -314,11 +328,7 @@ impl Lexer {
                 }
                 Some('"') => {
                     self.advance(); // consume closing '"'
-                    if has_interpolation {
-                        return self.make_span_token(TokenKind::StringEnd(text), start);
-                    } else {
-                        return self.make_span_token(TokenKind::StringLiteral(text), start);
-                    }
+                    return self.make_span_token(TokenKind::StringLiteral(text), start);
                 }
                 Some('\\') => {
                     self.advance(); // consume '\'
@@ -336,103 +346,13 @@ impl Lexer {
                 Some('$') => {
                     if self.peek_next() == Some('{') {
                         // ${expr} interpolation
-                        has_interpolation = true;
-                        let kind = if text.is_empty() && !has_interpolation {
-                            // Actually, if this is the first interpolation, emit StringStart
-                            TokenKind::StringStart(String::new())
-                        } else {
-                            TokenKind::StringStart(text)
-                        };
+                        let kind = TokenKind::StringStart(text);
                         self.advance(); // consume '$'
                         self.advance(); // consume '{'
                         self.interp_brace_depth.push(0);
                         return self.make_span_token(kind, start);
                     } else if self.peek_next().map_or(false, |c| c.is_alphabetic() || c == '_') {
-                        // $identifier interpolation
-                        has_interpolation = true;
-                        let str_kind = TokenKind::StringStart(text);
-                        let str_token = self.make_span_token(str_kind, start);
-                        // We'll return the StringStart and the caller will get
-                        // InterpolationIdent on the next call.
-                        // But for simplicity, let's just inline the ident extraction here.
-                        // Actually, we need to return multiple tokens. Let's use a different approach:
-                        // Return StringStart, then on next call scan the $ident.
-                        self.advance(); // consume '$'
-                        // Read the identifier
-                        let _ident_start = self.make_pos();
-                        let mut ident = String::new();
-                        while let Some(ch) = self.peek() {
-                            if ch.is_alphanumeric() || ch == '_' {
-                                ident.push(ch);
-                                self.advance();
-                            } else {
-                                break;
-                            }
-                        }
-                        // Now we need to return StringStart AND InterpolationIdent.
-                        // Since we can only return one token at a time, we need to
-                        // buffer the StringStart and remember we're in a string.
-                        // For now, let's use a simpler approach: emit a single StringStart
-                        // token, and push the ident into a pending queue.
-                        // Actually, the cleanest approach for a hand-written lexer:
-                        // Just continue scanning the rest of the string and emit StringMiddle/StringEnd.
-                        // But that breaks the token stream model.
-
-                        // Simplest correct approach: treat $ident like ${ident}.
-                        // Emit StringStart(text), then InterpolationIdent(ident),
-                        // then continue scanning.
-                        // We'll use a small pending token buffer.
-                        // But for v1 simplicity, let's inline $ident as part of the string
-                        // and handle it the same as ${ident}.
-
-                        // Push a "fake" brace depth to indicate we're resuming string after ident
-                        // Actually simplest: just store that we need to emit InterpolationIdent
-                        // and then continue string scanning. We'll handle this with pending tokens.
-
-                        // For this implementation: return StringStart, set a flag to emit
-                        // InterpolationIdent next, then resume string.
-                        // We'll store pending tokens.
-
-                        // Let me restructure: use a pending_tokens vec.
-                        // For now, just treat $ident as text interpolation by producing
-                        // StringStart + we mark that we need to resume string.
-                        // The simplest v1 approach: $ident → treated as ident reference
-                        // by the parser. We emit:
-                        //   StringStart("text before") → InterpolationIdent("ident") → [resume string scanning]
-
-                        // Since we already consumed the ident, let's push a marker so
-                        // scan_string_continuation is called next, and return both tokens.
-                        // We'll need a pending queue. Let's add it.
-
-                        // For now, combine into text (lose interpolation) — TEMPORARY
-                        // TODO: proper multi-token string interpolation
-                        // Actually let me just do it properly with a different approach.
-                        // Store the interpolation ident and mark that we need to resume string.
-
-                        // We'll mark that we're "in string after simple interp" by
-                        // pushing a special sentinel on interp_brace_depth.
-                        // Value u32::MAX means "simple ident interp, resume string immediately"
-                        self.interp_brace_depth.push(u32::MAX); // sentinel for $ident
-
-                        // We emit StringStart, then next_token() will see the sentinel
-                        // and emit InterpolationIdent, then resume string.
-                        // But we already consumed the ident... store it.
-                        // Hmm, this is getting complex. Let me use a pending token vec.
-
-                        // SIMPLEST correct approach for v1:
-                        // Store pending tokens in self, return them in order.
-                        // But we don't have a pending vec yet. Let me add one.
-
-                        // Actually, for $ident, let's just NOT support it in v1 lexer
-                        // and require ${ident}. That simplifies significantly.
-                        // The spec says both are supported... but we can start with ${} only.
-
-                        // Let's support both. I'll restructure with a pending token buffer.
-                        // For now, fall back: emit the $ident as part of the string text.
-                        text = str_token.kind.string_start_text().unwrap_or_default();
-                        text.push_str(&ident);
-                        // Continue scanning the rest of the string
-                        continue;
+                        return self.emit_string_segment_with_ident(start, text, true);
                     } else {
                         text.push('$');
                         self.advance();
@@ -487,12 +407,46 @@ impl Lexer {
                     self.interp_brace_depth.push(0);
                     return self.make_span_token(TokenKind::StringMiddle(text), start);
                 }
+                Some('$') if self.peek_next().map_or(false, |c| c.is_alphabetic() || c == '_') => {
+                    return self.emit_string_segment_with_ident(start, text, false);
+                }
                 Some(ch) => {
                     text.push(ch);
                     self.advance();
                 }
             }
         }
+    }
+
+    fn emit_string_segment_with_ident(&mut self, start: Position, text: String, is_start: bool) -> Token {
+        let segment_kind = if is_start {
+            TokenKind::StringStart(text)
+        } else {
+            TokenKind::StringMiddle(text)
+        };
+
+        self.advance(); // consume '$'
+        let ident_start = self.make_pos();
+        let mut ident = String::new();
+        while let Some(ch) = self.peek() {
+            if ch.is_alphanumeric() || ch == '_' {
+                ident.push(ch);
+                self.advance();
+            } else {
+                break;
+            }
+        }
+
+        self.pending_tokens.push_back(Token::new(
+            TokenKind::Identifier(ident),
+            Span {
+                start: ident_start,
+                end: self.make_pos(),
+            },
+        ));
+        self.resume_string_after_interp = true;
+
+        self.make_span_token(segment_kind, start)
     }
 
     // === Operators ===
@@ -653,16 +607,6 @@ impl Lexer {
                 TokenKind::Error(format!("Unexpected character: '{}'", ch)),
                 start,
             ),
-        }
-    }
-}
-
-// Helper to extract text from StringStart
-impl TokenKind {
-    fn string_start_text(&self) -> Option<String> {
-        match self {
-            TokenKind::StringStart(s) => Some(s.clone()),
-            _ => None,
         }
     }
 }
@@ -829,6 +773,28 @@ mod tests {
             TokenKind::Dot,
             TokenKind::Identifier("score".into()),
             TokenKind::StringEnd("".into()),
+        ]);
+    }
+
+    #[test]
+    fn test_string_interpolation_ident() {
+        let tokens = lex(r#""hello $name!""#);
+        assert_eq!(tokens, vec![
+            TokenKind::StringStart("hello ".into()),
+            TokenKind::Identifier("name".into()),
+            TokenKind::StringEnd("!".into()),
+        ]);
+    }
+
+    #[test]
+    fn test_string_interpolation_mixed() {
+        let tokens = lex(r#""$first scored ${points} pts""#);
+        assert_eq!(tokens, vec![
+            TokenKind::StringStart("".into()),
+            TokenKind::Identifier("first".into()),
+            TokenKind::StringMiddle(" scored ".into()),
+            TokenKind::Identifier("points".into()),
+            TokenKind::StringEnd(" pts".into()),
         ]);
     }
 

@@ -3,12 +3,15 @@
 //! A structured representation of C# code that can be emitted as source text.
 //! This sits between the Moon AST and the final C# output.
 
+use crate::lexer::token::Span;
+
 /// A complete C# file.
 #[derive(Debug, Clone)]
 pub struct CsFile {
     pub header_comment: String,
     pub usings: Vec<String>,
     pub class: CsClass,
+    pub extra_types: Vec<CsClass>,
 }
 
 /// A C# class declaration.
@@ -47,6 +50,7 @@ pub enum CsMember {
         name: String,
         params: Vec<CsParam>,
         body: Vec<CsStmt>,
+        source_span: Option<Span>,
     },
     RawCode(String),
 }
@@ -65,44 +69,51 @@ pub enum CsStmt {
         ty: String,   // "var" or explicit type
         name: String,
         init: String,
+        source_span: Option<Span>,
     },
     Assignment {
         target: String,
         op: String,
         value: String,
+        source_span: Option<Span>,
     },
-    Expr(String),
+    Expr(String, Option<Span>),
     If {
         cond: String,
         then_body: Vec<CsStmt>,
         else_body: Option<Vec<CsStmt>>,
+        source_span: Option<Span>,
     },
     Switch {
         subject: String,
         cases: Vec<CsSwitchCase>,
+        source_span: Option<Span>,
     },
     For {
         init: String,
         cond: String,
         incr: String,
         body: Vec<CsStmt>,
+        source_span: Option<Span>,
     },
     ForEach {
         ty: String,
         name: String,
         iterable: String,
         body: Vec<CsStmt>,
+        source_span: Option<Span>,
     },
     While {
         cond: String,
         body: Vec<CsStmt>,
+        source_span: Option<Span>,
     },
-    Return(Option<String>),
-    YieldReturn(String),
-    Break,
-    Continue,
-    Raw(String),
-    Block(Vec<CsStmt>),
+    Return(Option<String>, Option<Span>),
+    YieldReturn(String, Option<Span>),
+    Break(Option<Span>),
+    Continue(Option<Span>),
+    Raw(String, Option<Span>),
+    Block(Vec<CsStmt>, Option<Span>),
 }
 
 #[derive(Debug, Clone)]

@@ -20,6 +20,10 @@ pub fn emit(file: &CsFile) -> String {
 
     // Class
     emit_class(&mut out, &file.class, 0);
+    for extra_type in &file.extra_types {
+        out.push('\n');
+        emit_class(&mut out, extra_type, 0);
+    }
 
     out
 }
@@ -96,7 +100,7 @@ fn emit_member(out: &mut String, member: &CsMember, indent: usize, _is_enum: boo
                 }
             }
         }
-        CsMember::Method { attributes, modifiers, return_ty, name, params, body } => {
+        CsMember::Method { attributes, modifiers, return_ty, name, params, body, .. } => {
             for attr in attributes {
                 out.push_str(&format!("{}{}\n", pad, attr));
             }
@@ -107,7 +111,11 @@ fn emit_member(out: &mut String, member: &CsMember, indent: usize, _is_enum: boo
                     format!("{} {}", p.ty, p.name)
                 }
             }).collect();
-            out.push_str(&format!("{}{} {} {}({})\n", pad, modifiers, return_ty, name, params_str.join(", ")));
+            if return_ty.is_empty() {
+                out.push_str(&format!("{}{} {}({})\n", pad, modifiers, name, params_str.join(", ")));
+            } else {
+                out.push_str(&format!("{}{} {} {}({})\n", pad, modifiers, return_ty, name, params_str.join(", ")));
+            }
             out.push_str(&format!("{}{{\n", pad));
             for stmt in body {
                 emit_stmt(out, stmt, indent + 1);
@@ -124,16 +132,16 @@ fn emit_stmt(out: &mut String, stmt: &CsStmt, indent: usize) {
     let pad = "    ".repeat(indent);
 
     match stmt {
-        CsStmt::VarDecl { ty, name, init } => {
+        CsStmt::VarDecl { ty, name, init, .. } => {
             out.push_str(&format!("{}{} {} = {};\n", pad, ty, name, init));
         }
-        CsStmt::Assignment { target, op, value } => {
+        CsStmt::Assignment { target, op, value, .. } => {
             out.push_str(&format!("{}{} {} {};\n", pad, target, op, value));
         }
-        CsStmt::Expr(expr) => {
+        CsStmt::Expr(expr, _) => {
             out.push_str(&format!("{}{};\n", pad, expr));
         }
-        CsStmt::If { cond, then_body, else_body } => {
+        CsStmt::If { cond, then_body, else_body, .. } => {
             out.push_str(&format!("{}if ({})\n", pad, cond));
             out.push_str(&format!("{}{{\n", pad));
             for s in then_body {
@@ -161,7 +169,7 @@ fn emit_stmt(out: &mut String, stmt: &CsStmt, indent: usize) {
                 out.push_str(&format!("{}}}\n", pad));
             }
         }
-        CsStmt::Switch { subject, cases } => {
+        CsStmt::Switch { subject, cases, .. } => {
             out.push_str(&format!("{}switch ({})\n", pad, subject));
             out.push_str(&format!("{}{{\n", pad));
             for case in cases {
@@ -172,7 +180,7 @@ fn emit_stmt(out: &mut String, stmt: &CsStmt, indent: usize) {
             }
             out.push_str(&format!("{}}}\n", pad));
         }
-        CsStmt::For { init, cond, incr, body } => {
+        CsStmt::For { init, cond, incr, body, .. } => {
             out.push_str(&format!("{}for ({}; {}; {})\n", pad, init, cond, incr));
             out.push_str(&format!("{}{{\n", pad));
             for s in body {
@@ -180,7 +188,7 @@ fn emit_stmt(out: &mut String, stmt: &CsStmt, indent: usize) {
             }
             out.push_str(&format!("{}}}\n", pad));
         }
-        CsStmt::ForEach { ty, name, iterable, body } => {
+        CsStmt::ForEach { ty, name, iterable, body, .. } => {
             out.push_str(&format!("{}foreach ({} {} in {})\n", pad, ty, name, iterable));
             out.push_str(&format!("{}{{\n", pad));
             for s in body {
@@ -188,7 +196,7 @@ fn emit_stmt(out: &mut String, stmt: &CsStmt, indent: usize) {
             }
             out.push_str(&format!("{}}}\n", pad));
         }
-        CsStmt::While { cond, body } => {
+        CsStmt::While { cond, body, .. } => {
             out.push_str(&format!("{}while ({})\n", pad, cond));
             out.push_str(&format!("{}{{\n", pad));
             for s in body {
@@ -196,28 +204,28 @@ fn emit_stmt(out: &mut String, stmt: &CsStmt, indent: usize) {
             }
             out.push_str(&format!("{}}}\n", pad));
         }
-        CsStmt::Return(value) => {
+        CsStmt::Return(value, _) => {
             if let Some(v) = value {
                 out.push_str(&format!("{}return {};\n", pad, v));
             } else {
                 out.push_str(&format!("{}return;\n", pad));
             }
         }
-        CsStmt::YieldReturn(value) => {
+        CsStmt::YieldReturn(value, _) => {
             out.push_str(&format!("{}yield return {};\n", pad, value));
         }
-        CsStmt::Break => {
+        CsStmt::Break(_) => {
             out.push_str(&format!("{}break;\n", pad));
         }
-        CsStmt::Continue => {
+        CsStmt::Continue(_) => {
             out.push_str(&format!("{}continue;\n", pad));
         }
-        CsStmt::Raw(code) => {
+        CsStmt::Raw(code, _) => {
             for line in code.lines() {
                 out.push_str(&format!("{}{}\n", pad, line));
             }
         }
-        CsStmt::Block(stmts) => {
+        CsStmt::Block(stmts, _) => {
             for s in stmts {
                 emit_stmt(out, s, indent);
             }

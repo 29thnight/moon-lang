@@ -23,9 +23,37 @@ function Get-UnityExeFromProject {
     return Join-Path $env:ProgramFiles "Unity\Hub\Editor\$version\Editor\Unity.exe"
 }
 
+function Get-OpenUnityProjectProcesses {
+    param([string]$ResolvedProjectPath)
+
+    $normalizedProjectPath = [IO.Path]::GetFullPath($ResolvedProjectPath)
+    $unityProcesses = Get-CimInstance Win32_Process -Filter "Name = 'Unity.exe'"
+
+    foreach ($process in $unityProcesses) {
+        $commandLine = [string]$process.CommandLine
+        if ([string]::IsNullOrWhiteSpace($commandLine)) {
+            continue
+        }
+
+        $normalizedCommandLine = $commandLine.Replace('/', '\').ToLowerInvariant()
+        if ($normalizedCommandLine.Contains($normalizedProjectPath.ToLowerInvariant()) -and -not $normalizedCommandLine.Contains('-batchmode')) {
+            [pscustomobject]@{
+                ProcessId = $process.ProcessId
+                CommandLine = $commandLine
+            }
+        }
+    }
+}
+
 $resolvedProjectPath = (Resolve-Path -LiteralPath $ProjectPath).Path
 if (-not $UnityExe) {
     $UnityExe = Get-UnityExeFromProject -ResolvedProjectPath $resolvedProjectPath
+}
+
+$openUnityProcesses = @(Get-OpenUnityProjectProcesses -ResolvedProjectPath $resolvedProjectPath)
+if ($openUnityProcesses.Count -gt 0) {
+    $processList = ($openUnityProcesses | ForEach-Object { $_.ProcessId }) -join ', '
+    throw "BlazeTest project is already open in Unity (PID: $processList). Close the editor and rerun the smoke script."
 }
 
 if (-not (Test-Path -LiteralPath $UnityExe)) {
@@ -37,6 +65,12 @@ New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
 $resultsPath = Join-Path $outputDir "results.xml"
 $logPath = Join-Path $outputDir "unity.log"
+
+foreach ($artifactPath in @($resultsPath, $logPath)) {
+    if (Test-Path -LiteralPath $artifactPath) {
+        Remove-Item -LiteralPath $artifactPath -Force
+    }
+}
 
 $arguments = @(
     "-batchmode",

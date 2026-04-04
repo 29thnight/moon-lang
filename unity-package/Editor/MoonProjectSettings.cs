@@ -158,14 +158,7 @@ pascal_case_methods = true
 
         public static string ResolveProjectPath(string candidatePath)
         {
-            if (string.IsNullOrWhiteSpace(candidatePath) || candidatePath == "moonc")
-            {
-                return candidatePath;
-            }
-
-            return Path.IsPathRooted(candidatePath)
-                ? candidatePath
-                : Path.Combine(GetProjectRoot(), candidatePath);
+            return MoonProjectConfig.ResolveProjectPath(GetProjectRoot(), candidatePath);
         }
 
         private static string ReadTomlValue(string key, string section = null)
@@ -173,37 +166,7 @@ pascal_case_methods = true
             string filePath = GetProjectFilePath();
             if (!File.Exists(filePath)) return null;
 
-            string[] lines = File.ReadAllLines(filePath);
-            bool inSection = section == null;
-
-            foreach (string line in lines)
-            {
-                string trimmed = line.Trim();
-
-                if (trimmed.StartsWith("[") && trimmed.EndsWith("]"))
-                {
-                    string sectionName = trimmed.Substring(1, trimmed.Length - 2).Trim();
-                    inSection = section == null || sectionName == section;
-                    continue;
-                }
-
-                if (!inSection) continue;
-
-                int eq = trimmed.IndexOf('=');
-                if (eq > 0)
-                {
-                    string k = trimmed.Substring(0, eq).Trim();
-                    if (k == key)
-                    {
-                        string v = trimmed.Substring(eq + 1).Trim();
-                        if (v.StartsWith("\"") && v.EndsWith("\""))
-                            v = v.Substring(1, v.Length - 2);
-                        return v;
-                    }
-                }
-            }
-
-            return null;
+            return MoonProjectConfig.ParseTomlValue(File.ReadAllText(filePath), key, section);
         }
     }
 }

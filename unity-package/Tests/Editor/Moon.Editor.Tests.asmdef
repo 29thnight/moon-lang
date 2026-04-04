@@ -1,0 +1,22 @@
+{
+    "name": "Moon.Editor.Tests",
+    "rootNamespace": "Moon.Editor.Tests",
+    "references": [
+        "Moon.Editor",
+        "Moon.Runtime"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false,
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ]
+}

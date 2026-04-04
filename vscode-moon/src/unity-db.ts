@@ -1,6 +1,59 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import Database from 'better-sqlite3';
+
+type BetterSqliteStatement = {
+    get(...params: unknown[]): unknown;
+    all(...params: unknown[]): unknown[];
+};
+
+type BetterSqliteDatabase = {
+    prepare(source: string): BetterSqliteStatement;
+    close(): void;
+};
+
+type BetterSqliteConstructor = new (
+    filename?: string | Buffer,
+    options?: {
+        readonly?: boolean;
+        fileMustExist?: boolean;
+        nativeBinding?: string;
+    },
+) => BetterSqliteDatabase;
+
+interface BetterSqliteRuntime {
+    Database: BetterSqliteConstructor;
+    nativeBinding?: string;
+}
+
+let cachedBetterSqliteRuntime: BetterSqliteRuntime | null = null;
+
+function loadBetterSqliteRuntime(): BetterSqliteRuntime {
+    if (cachedBetterSqliteRuntime) {
+        return cachedBetterSqliteRuntime;
+    }
+
+    try {
+        cachedBetterSqliteRuntime = {
+            Database: require('better-sqlite3') as BetterSqliteConstructor,
+        };
+        return cachedBetterSqliteRuntime;
+    } catch {
+        const vendorRoot = path.resolve(__dirname, 'vendor', 'better-sqlite3');
+        const vendorEntry = path.join(vendorRoot, 'lib', 'index.js');
+        const nativeBinding = path.join(vendorRoot, 'build', 'Release', 'better_sqlite3.node');
+
+        if (fs.existsSync(vendorEntry) && fs.existsSync(nativeBinding)) {
+            cachedBetterSqliteRuntime = {
+                Database: require(vendorEntry) as BetterSqliteConstructor,
+                nativeBinding,
+            };
+            return cachedBetterSqliteRuntime;
+        }
+
+        throw new Error('better-sqlite3 runtime not found');
+    }
+}
 
 export interface ApiSymbol {
     id: number;
@@ -26,18 +79,23 @@ export interface ApiSymbol {
  *                     └─ methodName (Property)
  */
 export class UnityApiDb {
-    private db: Database.Database | null = null;
+    private db: BetterSqliteDatabase | null = null;
 
-    private stmtMembersByParent: Database.Statement | null = null;
-    private stmtClassByName: Database.Statement | null = null;
-    private stmtAllClasses: Database.Statement | null = null;
-    private stmtSearchByName: Database.Statement | null = null;
+    private stmtMembersByParent: BetterSqliteStatement | null = null;
+    private stmtClassByName: BetterSqliteStatement | null = null;
+    private stmtAllClasses: BetterSqliteStatement | null = null;
+    private stmtSearchByName: BetterSqliteStatement | null = null;
 
     constructor() {}
 
     open(dbPath: string): boolean {
         try {
-            this.db = new Database(dbPath, { readonly: true, fileMustExist: true });
+            const runtime = loadBetterSqliteRuntime();
+            this.db = new runtime.Database(dbPath, {
+                readonly: true,
+                fileMustExist: true,
+                nativeBinding: runtime.nativeBinding,
+            });
             this.prepareStatements();
             return true;
         } catch (e) {

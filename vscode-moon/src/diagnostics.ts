@@ -1,20 +1,8 @@
 import * as vscode from 'vscode';
-import { exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import {
-    getBundledCompilerCandidates,
-    getProjectCompilerPath,
-    getWorkspaceDevCompilerCandidates,
-    resolveCompilerPathFromContext,
-} from './compiler-resolver';
-
-interface MoonDiagnosticResult {
-    files: number;
-    errors: number;
-    warnings: number;
-    diagnostics: MoonDiagnosticEntry[];
-}
+import { normalizeDiagnosticRange } from './diagnostic-range';
+import { clearCompilerPathCache, MoonDiagnosticResult, runMoonCheck, runMoonCompile } from './moonc-cli';
 
 interface MoonDiagnosticEntry {
     code: string;
@@ -23,53 +11,8 @@ interface MoonDiagnosticEntry {
     file: string;
     line: number;
     col: number;
-}
-
-let _cachedCompilerPath: string | null = null;
-
-function getCompilerPath(): string {
-    if (_cachedCompilerPath) {
-        return _cachedCompilerPath;
-    }
-
-    const config = vscode.workspace.getConfiguration('moon');
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const extensionPath = vscode.extensions.getExtension('moon-lang.moon-lang')?.extensionPath;
-
-    _cachedCompilerPath = resolveCompilerPathFromContext({
-        userOverride: config.get<string>('compilerPath', ''),
-        projectCompilerPath: getProjectCompilerPath(workspaceRoot),
-        bundledCandidates: getBundledCompilerCandidates(extensionPath),
-        devCandidates: getWorkspaceDevCompilerCandidates(workspaceRoot),
-        fallback: 'moonc',
-    });
-
-    return _cachedCompilerPath;
-}
-
-export function clearCompilerPathCache() {
-    _cachedCompilerPath = null;
-}
-
-export function runMoonCheck(filePath: string): Promise<MoonDiagnosticResult> {
-    return new Promise((resolve) => {
-        const compiler = getCompilerPath();
-        const command = `"${compiler}" check "${filePath}" --json`;
-
-        exec(command, { timeout: 30000 }, (_error, stdout) => {
-            try {
-                const output = stdout.trim();
-                if (output) {
-                    resolve(JSON.parse(output) as MoonDiagnosticResult);
-                    return;
-                }
-            } catch {
-                // fall through to empty result
-            }
-
-            resolve({ files: 0, errors: 0, warnings: 0, diagnostics: [] });
-        });
-    });
+    end_line?: number;
+    end_col?: number;
 }
 
 export async function checkDocument(
@@ -96,15 +39,28 @@ export async function checkDocument(
     const result = await runMoonCheck(checkPath);
     const showWarnings = config.get<boolean>('showWarnings', true);
     const diagnostics: vscode.Diagnostic[] = [];
+    const lineLengths = Array.from({ length: document.lineCount }, (_, index) => document.lineAt(index).text.length);
 
     for (const entry of result.diagnostics) {
         if (entry.severity === 'warning' && !showWarnings) {
             continue;
         }
 
-        const line = Math.max(0, entry.line - 1);
-        const col = Math.max(0, entry.col - 1);
-        const range = new vscode.Range(line, col, line, col + 10);
+        const normalizedRange = normalizeDiagnosticRange(
+            {
+                line: entry.line,
+                col: entry.col,
+                endLine: entry.end_line,
+                endCol: entry.end_col,
+            },
+            lineLengths,
+        );
+        const range = new vscode.Range(
+            normalizedRange.startLine,
+            normalizedRange.startCol,
+            normalizedRange.endLine,
+            normalizedRange.endCol,
+        );
         const severity = entry.severity === 'error'
             ? vscode.DiagnosticSeverity.Error
             : vscode.DiagnosticSeverity.Warning;
@@ -131,31 +87,9 @@ export async function checkDocument(
 }
 
 export function compileFile(filePath: string): Promise<{ success: boolean; output: string }> {
-    return new Promise((resolve) => {
-        const compiler = getCompilerPath();
-        const command = `"${compiler}" compile "${filePath}"`;
-
-        exec(command, { timeout: 60000 }, (error, stdout, stderr) => {
-            if (error) {
-                resolve({ success: false, output: stderr || error.message });
-            } else {
-                resolve({ success: true, output: stdout });
-            }
-        });
-    });
+    return runMoonCompile(filePath, 60000);
 }
 
 export function compileDirectory(dirPath: string): Promise<{ success: boolean; output: string }> {
-    return new Promise((resolve) => {
-        const compiler = getCompilerPath();
-        const command = `"${compiler}" compile "${dirPath}"`;
-
-        exec(command, { timeout: 120000 }, (error, stdout, stderr) => {
-            if (error) {
-                resolve({ success: false, output: stderr || error.message });
-            } else {
-                resolve({ success: true, output: stdout });
-            }
-        });
-    });
+    return runMoonCompile(dirPath, 120000);
 }

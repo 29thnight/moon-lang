@@ -50,7 +50,7 @@ data class Name(
     val field2: Type
 )
 ```
-→ `[System.Serializable] public class Name` + Equals/GetHashCode/ToString
+→ `[System.Serializable] public class Name` + public fields + constructor + Equals/GetHashCode/ToString
 
 ### enum
 ```
@@ -206,6 +206,9 @@ when {
 ```
 when 화살표: `=>`
 
+현재 v1 구현은 if/when 표현식을 지원한다.
+브랜치가 단일 식이면 직접 값으로 lowering되고, 블록인 경우 마지막 값 식을 기준으로 결과를 만든다.
+
 ### for (괄호 없음)
 ```
 for item in collection { body }
@@ -284,6 +287,9 @@ listen event.name { param ->
 }
 ```
 → `event.name.AddListener((...) => { body });`
+
+v1에서는 listen 등록만 보장한다.
+자동 해제(`RemoveListener`)나 `unlisten` 문법은 포함하지 않으며, 리스너 수명주기 관리는 후속 버전 범위다.
 
 ## 12. Intrinsic (이스케이프 해치)
 

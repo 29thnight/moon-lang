@@ -133,8 +133,11 @@ impl Parser {
                 // Return a dummy component
                 Decl::Component {
                     name: "<error>".into(),
+                    name_span: self.peek_span(),
                     base_class: "MonoBehaviour".into(),
+                    base_class_span: self.peek_span(),
                     interfaces: vec![],
+                    interface_spans: vec![],
                     members: vec![],
                     span: self.peek_span(),
                 }
@@ -190,11 +193,10 @@ impl Parser {
         let start = self.peek_span();
         self.advance(); // consume 'component'
 
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         self.expect(&TokenKind::Colon)?;
-        let (base_class, _) = self.expect_ident()?;
-
-        // TODO: parse interface list after comma
+        let (base_class, base_class_span) = self.expect_ident()?;
+        let (interfaces, interface_spans) = self.parse_interface_list()?;
 
         self.skip_newlines();
         self.expect(&TokenKind::LBrace)?;
@@ -203,8 +205,11 @@ impl Parser {
 
         Ok(Decl::Component {
             name,
+            name_span,
             base_class,
-            interfaces: vec![],
+            base_class_span,
+            interfaces,
+            interface_spans,
             members,
             span: Span { start: start.start, end: self.peek_span().end },
         })
@@ -214,9 +219,9 @@ impl Parser {
         let start = self.peek_span();
         self.advance(); // consume 'asset'
 
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         self.expect(&TokenKind::Colon)?;
-        let (base_class, _) = self.expect_ident()?;
+        let (base_class, base_class_span) = self.expect_ident()?;
 
         self.skip_newlines();
         self.expect(&TokenKind::LBrace)?;
@@ -225,7 +230,9 @@ impl Parser {
 
         Ok(Decl::Asset {
             name,
+            name_span,
             base_class,
+            base_class_span,
             members,
             span: Span { start: start.start, end: self.peek_span().end },
         })
@@ -235,13 +242,18 @@ impl Parser {
         let start = self.peek_span();
         self.advance(); // consume 'class'
 
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
 
-        let super_class = if self.eat(&TokenKind::Colon) {
-            let (sc, _) = self.expect_ident()?;
-            Some(sc)
+        let (super_class, super_class_span) = if self.eat(&TokenKind::Colon) {
+            let (sc, span) = self.expect_ident()?;
+            (Some(sc), Some(span))
         } else {
-            None
+            (None, None)
+        };
+        let (interfaces, interface_spans) = if super_class.is_some() {
+            self.parse_interface_list()?
+        } else {
+            (vec![], vec![])
         };
 
         self.skip_newlines();
@@ -251,18 +263,32 @@ impl Parser {
 
         Ok(Decl::Class {
             name,
+            name_span,
             super_class,
-            interfaces: vec![],
+            super_class_span,
+            interfaces,
+            interface_spans,
             members,
             span: Span { start: start.start, end: self.peek_span().end },
         })
+    }
+
+    fn parse_interface_list(&mut self) -> Result<(Vec<String>, Vec<Span>), ParseError> {
+        let mut interfaces = Vec::new();
+        let mut interface_spans = Vec::new();
+        while self.eat(&TokenKind::Comma) {
+            let (iface, span) = self.expect_ident()?;
+            interfaces.push(iface);
+            interface_spans.push(span);
+        }
+        Ok((interfaces, interface_spans))
     }
 
     fn parse_data_class(&mut self) -> Result<Decl, ParseError> {
         let start = self.peek_span();
         self.advance(); // consume 'data'
         self.expect(&TokenKind::Class)?;
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         self.expect(&TokenKind::LParen)?;
 
         let mut fields = Vec::new();
@@ -287,6 +313,7 @@ impl Parser {
 
         Ok(Decl::DataClass {
             name,
+            name_span,
             fields,
             span: Span { start: start.start, end: self.peek_span().end },
         })
@@ -295,7 +322,7 @@ impl Parser {
     fn parse_enum(&mut self) -> Result<Decl, ParseError> {
         let start = self.peek_span();
         self.advance(); // consume 'enum'
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
 
         // Optional enum params: enum Weapon(val damage: Int)
         let params = if self.eat(&TokenKind::LParen) {
@@ -324,7 +351,7 @@ impl Parser {
         let mut entries = Vec::new();
         while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
             let entry_span = self.peek_span();
-            let (ename, _) = self.expect_ident()?;
+            let (ename, entry_name_span) = self.expect_ident()?;
             let args = if self.eat(&TokenKind::LParen) {
                 let mut a = Vec::new();
                 while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
@@ -336,7 +363,12 @@ impl Parser {
             } else {
                 vec![]
             };
-            entries.push(EnumEntry { name: ename, args, span: entry_span });
+            entries.push(EnumEntry {
+                name: ename,
+                name_span: entry_name_span,
+                args,
+                span: Span { start: entry_span.start, end: self.peek_span().end },
+            });
             self.skip_newlines();
             self.eat(&TokenKind::Comma);
             self.skip_newlines();
@@ -345,6 +377,7 @@ impl Parser {
 
         Ok(Decl::Enum {
             name,
+            name_span,
             params,
             entries,
             span: Span { start: start.start, end: self.peek_span().end },
@@ -354,7 +387,7 @@ impl Parser {
     fn parse_attribute_decl(&mut self, annotations: Vec<Annotation>) -> Result<Decl, ParseError> {
         let start = self.peek_span();
         self.advance(); // consume 'attribute'
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         self.expect(&TokenKind::LParen)?;
         let mut fields = Vec::new();
         self.skip_newlines();
@@ -382,6 +415,7 @@ impl Parser {
 
         Ok(Decl::Attribute {
             name,
+            name_span,
             fields,
             targets,
             span: Span { start: start.start, end: self.peek_span().end },
@@ -512,7 +546,7 @@ impl Parser {
             self.eat(&TokenKind::Val); // optional, default = val
             Mutability::Val
         };
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         self.expect(&TokenKind::Colon)?;
         let ty = self.parse_type()?;
         let init = if self.eat(&TokenKind::Eq) {
@@ -526,6 +560,7 @@ impl Parser {
             visibility,
             mutability,
             name,
+            name_span,
             ty,
             init,
             span: Span { start: start.start, end: self.peek_span().end },
@@ -535,41 +570,41 @@ impl Parser {
     fn parse_require(&mut self) -> Result<Member, ParseError> {
         let start = self.peek_span();
         self.advance(); // consume 'require'
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         self.expect(&TokenKind::Colon)?;
         let ty = self.parse_type()?;
         self.expect_newline_or_eof();
-        Ok(Member::Require { name, ty, span: Span { start: start.start, end: self.peek_span().end } })
+        Ok(Member::Require { name, name_span, ty, span: Span { start: start.start, end: self.peek_span().end } })
     }
 
     fn parse_optional(&mut self) -> Result<Member, ParseError> {
         let start = self.peek_span();
         self.advance();
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         self.expect(&TokenKind::Colon)?;
         let ty = self.parse_type()?;
         self.expect_newline_or_eof();
-        Ok(Member::Optional { name, ty, span: Span { start: start.start, end: self.peek_span().end } })
+        Ok(Member::Optional { name, name_span, ty, span: Span { start: start.start, end: self.peek_span().end } })
     }
 
     fn parse_child(&mut self) -> Result<Member, ParseError> {
         let start = self.peek_span();
         self.advance();
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         self.expect(&TokenKind::Colon)?;
         let ty = self.parse_type()?;
         self.expect_newline_or_eof();
-        Ok(Member::Child { name, ty, span: Span { start: start.start, end: self.peek_span().end } })
+        Ok(Member::Child { name, name_span, ty, span: Span { start: start.start, end: self.peek_span().end } })
     }
 
     fn parse_parent(&mut self) -> Result<Member, ParseError> {
         let start = self.peek_span();
         self.advance();
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         self.expect(&TokenKind::Colon)?;
         let ty = self.parse_type()?;
         self.expect_newline_or_eof();
-        Ok(Member::Parent { name, ty, span: Span { start: start.start, end: self.peek_span().end } })
+        Ok(Member::Parent { name, name_span, ty, span: Span { start: start.start, end: self.peek_span().end } })
     }
 
     fn parse_func(&mut self, vis: Visibility, is_override: bool) -> Result<Member, ParseError> {
@@ -579,7 +614,7 @@ impl Parser {
 
     fn parse_func_inner(&mut self, vis: Visibility, is_override: bool) -> Result<Member, ParseError> {
         let start = self.peek_span();
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         self.expect(&TokenKind::LParen)?;
         let params = self.parse_param_list()?;
         self.expect(&TokenKind::RParen)?;
@@ -604,6 +639,7 @@ impl Parser {
             visibility: vis,
             is_override,
             name,
+            name_span,
             params,
             return_ty,
             body,
@@ -614,7 +650,7 @@ impl Parser {
     fn parse_coroutine(&mut self) -> Result<Member, ParseError> {
         let start = self.peek_span();
         self.advance(); // consume 'coroutine'
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         self.expect(&TokenKind::LParen)?;
         let params = self.parse_param_list()?;
         self.expect(&TokenKind::RParen)?;
@@ -622,6 +658,7 @@ impl Parser {
         let body = self.parse_block()?;
         Ok(Member::Coroutine {
             name,
+            name_span,
             params,
             body,
             span: Span { start: start.start, end: self.peek_span().end },
@@ -681,7 +718,7 @@ impl Parser {
             TokenKind::Func => {
                 self.advance();
                 let vis = Visibility::Public;
-                let (name, _) = self.expect_ident()?;
+                let (name, name_span) = self.expect_ident()?;
                 self.expect(&TokenKind::LParen)?;
                 let params = self.parse_param_list()?;
                 self.expect(&TokenKind::RParen)?;
@@ -695,6 +732,7 @@ impl Parser {
                 Ok(Member::IntrinsicFunc {
                     visibility: vis,
                     name,
+                    name_span,
                     params,
                     return_ty,
                     code,
@@ -703,7 +741,7 @@ impl Parser {
             }
             TokenKind::Coroutine => {
                 self.advance();
-                let (name, _) = self.expect_ident()?;
+                let (name, name_span) = self.expect_ident()?;
                 self.expect(&TokenKind::LParen)?;
                 let params = self.parse_param_list()?;
                 self.expect(&TokenKind::RParen)?;
@@ -711,6 +749,7 @@ impl Parser {
                 let code = self.parse_raw_brace_block()?;
                 Ok(Member::IntrinsicCoroutine {
                     name,
+                    name_span,
                     params,
                     code,
                     span: Span { start: start.start, end: self.peek_span().end },
@@ -723,7 +762,7 @@ impl Parser {
     fn parse_field(&mut self, vis: Visibility) -> Result<Member, ParseError> {
         // private name: Type = init
         let start = self.peek_span();
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         self.expect(&TokenKind::Colon)?;
         let ty = self.parse_type()?;
         let init = if self.eat(&TokenKind::Eq) {
@@ -736,6 +775,7 @@ impl Parser {
             visibility: vis,
             mutability: Mutability::Var,
             name,
+            name_span,
             ty: Some(ty),
             init,
             span: Span { start: start.start, end: self.peek_span().end },
@@ -754,7 +794,7 @@ impl Parser {
             self.expect(&TokenKind::Fixed)?;
             Mutability::Fixed
         };
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         let ty = if self.eat(&TokenKind::Colon) {
             Some(self.parse_type()?)
         } else {
@@ -770,6 +810,7 @@ impl Parser {
             visibility: vis,
             mutability,
             name,
+            name_span,
             ty,
             init,
             span: Span { start: start.start, end: self.peek_span().end },
@@ -862,7 +903,7 @@ impl Parser {
     fn parse_val_stmt(&mut self) -> Result<Stmt, ParseError> {
         let start = self.peek_span();
         self.advance(); // consume 'val'
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         let ty = if self.eat(&TokenKind::Colon) {
             Some(self.parse_type()?)
         } else {
@@ -871,13 +912,13 @@ impl Parser {
         self.expect(&TokenKind::Eq)?;
         let init = self.parse_expr()?;
         self.expect_newline_or_eof();
-        Ok(Stmt::ValDecl { name, ty, init, span: Span { start: start.start, end: self.peek_span().end } })
+        Ok(Stmt::ValDecl { name, name_span, ty, init, span: Span { start: start.start, end: self.peek_span().end } })
     }
 
     fn parse_var_stmt(&mut self) -> Result<Stmt, ParseError> {
         let start = self.peek_span();
         self.advance(); // consume 'var'
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         let ty = if self.eat(&TokenKind::Colon) {
             Some(self.parse_type()?)
         } else {
@@ -889,7 +930,7 @@ impl Parser {
             None
         };
         self.expect_newline_or_eof();
-        Ok(Stmt::VarDecl { name, ty, init, span: Span { start: start.start, end: self.peek_span().end } })
+        Ok(Stmt::VarDecl { name, name_span, ty, init, span: Span { start: start.start, end: self.peek_span().end } })
     }
 
     fn parse_if_stmt(&mut self) -> Result<Stmt, ParseError> {
@@ -982,13 +1023,14 @@ impl Parser {
     fn parse_for_stmt(&mut self) -> Result<Stmt, ParseError> {
         let start = self.peek_span();
         self.advance(); // consume 'for'
-        let (var_name, _) = self.expect_ident()?;
+        let (var_name, name_span) = self.expect_ident()?;
         self.expect(&TokenKind::In)?;
         let iterable = self.parse_expr()?;
         self.skip_newlines();
         let body = self.parse_block()?;
         Ok(Stmt::For {
             var_name,
+            name_span,
             iterable,
             body,
             span: Span { start: start.start, end: self.peek_span().end },
@@ -1150,6 +1192,69 @@ impl Parser {
 
     fn parse_expr(&mut self) -> Result<Expr, ParseError> {
         self.parse_elvis()
+    }
+
+    fn parse_if_expr(&mut self) -> Result<Expr, ParseError> {
+        let start = self.peek_span();
+        self.advance(); // consume 'if'
+        let cond = self.parse_expr()?;
+        self.skip_newlines();
+        let then_block = self.parse_block()?;
+
+        if !self.eat(&TokenKind::Else) {
+            return Err(self.error("Expected else branch in if expression".into()));
+        }
+
+        self.skip_newlines();
+        let else_block = if self.check(&TokenKind::If) {
+            let nested_if = self.parse_if_expr()?;
+            self.expr_to_block(nested_if)
+        } else {
+            self.parse_block()?
+        };
+
+        Ok(Expr::IfExpr {
+            cond: Box::new(cond),
+            then_block,
+            else_block,
+            span: Span { start: start.start, end: self.peek_span().end },
+        })
+    }
+
+    fn parse_when_expr(&mut self) -> Result<Expr, ParseError> {
+        let start = self.peek_span();
+        self.advance(); // consume 'when'
+
+        let subject = if !self.check(&TokenKind::LBrace) && !self.check(&TokenKind::Newline) {
+            Some(Box::new(self.parse_expr()?))
+        } else {
+            None
+        };
+
+        self.skip_newlines();
+        self.expect(&TokenKind::LBrace)?;
+        self.skip_newlines();
+
+        let mut branches = Vec::new();
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
+            branches.push(self.parse_when_branch()?);
+            self.skip_newlines();
+        }
+        self.expect(&TokenKind::RBrace)?;
+
+        Ok(Expr::WhenExpr {
+            subject,
+            branches,
+            span: Span { start: start.start, end: self.peek_span().end },
+        })
+    }
+
+    fn expr_to_block(&self, expr: Expr) -> Block {
+        let span = expr.span();
+        Block {
+            stmts: vec![Stmt::Expr { expr, span }],
+            span,
+        }
     }
 
     // Elvis (?:) — lowest precedence
@@ -1346,7 +1451,7 @@ impl Parser {
             match self.peek().clone() {
                 TokenKind::Dot => {
                     self.advance();
-                    let (name, _) = self.expect_ident()?;
+                    let (name, name_span) = self.expect_ident()?;
 
                     // Check if this is a method call: expr.name(args)
                     if self.check(&TokenKind::LParen) || self.check(&TokenKind::Lt) {
@@ -1355,6 +1460,7 @@ impl Parser {
                         expr = Expr::Call {
                             receiver: Some(Box::new(expr)),
                             name,
+                            name_span,
                             type_args,
                             args,
                             span,
@@ -1364,13 +1470,14 @@ impl Parser {
                         expr = Expr::MemberAccess {
                             receiver: Box::new(expr),
                             name,
+                            name_span,
                             span,
                         };
                     }
                 }
                 TokenKind::QuestionDot => {
                     self.advance();
-                    let (name, _) = self.expect_ident()?;
+                    let (name, name_span) = self.expect_ident()?;
 
                     if self.check(&TokenKind::LParen) || self.check(&TokenKind::Lt) {
                         let (type_args, args) = self.parse_call_args()?;
@@ -1378,6 +1485,7 @@ impl Parser {
                         expr = Expr::SafeMethodCall {
                             receiver: Box::new(expr),
                             name,
+                            name_span,
                             type_args,
                             args,
                             span,
@@ -1387,6 +1495,7 @@ impl Parser {
                         expr = Expr::SafeCall {
                             receiver: Box::new(expr),
                             name,
+                            name_span,
                             span,
                         };
                     }
@@ -1410,13 +1519,15 @@ impl Parser {
                 TokenKind::LParen => {
                     // Function call without receiver or with implicit receiver
                     // This handles cases like: ident(args), ident<T>(args)
-                    if let Expr::Ident(name, _) = &expr {
+                    if let Expr::Ident(name, name_span) = &expr {
                         let name = name.clone();
+                        let name_span = *name_span;
                         let (type_args, args) = self.parse_call_args()?;
                         let span = Span { start: expr.span().start, end: self.peek_span().end };
                         expr = Expr::Call {
                             receiver: None,
                             name,
+                            name_span,
                             type_args,
                             args,
                             span,
@@ -1428,8 +1539,9 @@ impl Parser {
                 TokenKind::Lt => {
                     // Could be generic call: ident<T>(args)
                     // Only try if expr is an identifier
-                    if let Expr::Ident(name, _) = &expr {
+                    if let Expr::Ident(name, name_span) = &expr {
                         let name = name.clone();
+                        let name_span = *name_span;
                         // Try parsing as generic call, backtrack if not
                         let save = self.pos;
                         if let Ok((type_args, args)) = self.try_parse_generic_call() {
@@ -1437,6 +1549,7 @@ impl Parser {
                             expr = Expr::Call {
                                 receiver: None,
                                 name,
+                                name_span,
                                 type_args,
                                 args,
                                 span,
@@ -1526,6 +1639,8 @@ impl Parser {
             TokenKind::This => { self.advance(); Ok(Expr::This(span)) }
             TokenKind::StringLiteral(s) => { self.advance(); Ok(Expr::StringLit(s, span)) }
             TokenKind::StringStart(s) => self.parse_string_interp(s),
+            TokenKind::If => self.parse_if_expr(),
+            TokenKind::When => self.parse_when_expr(),
             TokenKind::Identifier(name) => {
                 self.advance();
                 Ok(Expr::Ident(name, span))
@@ -1654,7 +1769,7 @@ impl Parser {
 
     fn parse_param(&mut self) -> Result<Param, ParseError> {
         let start = self.peek_span();
-        let (name, _) = self.expect_ident()?;
+        let (name, name_span) = self.expect_ident()?;
         self.expect(&TokenKind::Colon)?;
         let ty = self.parse_type()?;
         let default = if self.eat(&TokenKind::Eq) {
@@ -1664,6 +1779,7 @@ impl Parser {
         };
         Ok(Param {
             name,
+            name_span,
             ty,
             default,
             span: Span { start: start.start, end: self.peek_span().end },
@@ -1952,9 +2068,34 @@ mod tests {
     fn test_simple_class() {
         let file = parse_ok("class Helper {\n  func doStuff() {\n  }\n}");
         match &file.decl {
-            Decl::Class { name, super_class, .. } => {
+            Decl::Class { name, super_class, interfaces, .. } => {
                 assert_eq!(name, "Helper");
                 assert!(super_class.is_none());
+                assert!(interfaces.is_empty());
+            }
+            _ => panic!("Expected class"),
+        }
+    }
+
+    #[test]
+    fn test_component_with_interfaces() {
+        let file = parse_ok("component Foo : MonoBehaviour, IFoo, IBar {\n}");
+        match &file.decl {
+            Decl::Component { base_class, interfaces, .. } => {
+                assert_eq!(base_class, "MonoBehaviour");
+                assert_eq!(interfaces, &vec!["IFoo".to_string(), "IBar".to_string()]);
+            }
+            _ => panic!("Expected component"),
+        }
+    }
+
+    #[test]
+    fn test_class_with_interfaces() {
+        let file = parse_ok("class Helper : BaseHelper, IDisposable, IComparable {\n}\n");
+        match &file.decl {
+            Decl::Class { super_class, interfaces, .. } => {
+                assert_eq!(super_class.as_deref(), Some("BaseHelper"));
+                assert_eq!(interfaces, &vec!["IDisposable".to_string(), "IComparable".to_string()]);
             }
             _ => panic!("Expected class"),
         }
@@ -2091,6 +2232,20 @@ mod tests {
     }
 
     #[test]
+    fn test_if_expr() {
+        let file = parse_ok("component Foo : MonoBehaviour {\n  func score(): Int = if hp <= 0 { 0 } else { 100 }\n}");
+        match &file.decl {
+            Decl::Component { members, .. } => {
+                match &members[0] {
+                    Member::Func { body: FuncBody::ExprBody(Expr::IfExpr { .. }), .. } => {}
+                    _ => panic!("Expected if expression body"),
+                }
+            }
+            _ => panic!("Expected component"),
+        }
+    }
+
+    #[test]
     fn test_for_loop() {
         let file = parse_ok("component Foo : MonoBehaviour {\n  update {\n    for enemy in enemies {\n      attack(enemy)\n    }\n  }\n}");
         match &file.decl {
@@ -2115,6 +2270,23 @@ mod tests {
                     } else {
                         panic!("Expected when");
                     }
+                }
+            }
+            _ => panic!("Expected component"),
+        }
+    }
+
+    #[test]
+    fn test_when_expr() {
+        let src = "component Foo : MonoBehaviour {\n  func score(): Int = when state {\n    State.Idle => 0\n    else => 100\n  }\n}";
+        let file = parse_ok(src);
+        match &file.decl {
+            Decl::Component { members, .. } => {
+                match &members[0] {
+                    Member::Func { body: FuncBody::ExprBody(Expr::WhenExpr { branches, .. }), .. } => {
+                        assert_eq!(branches.len(), 2);
+                    }
+                    _ => panic!("Expected when expression body"),
                 }
             }
             _ => panic!("Expected component"),

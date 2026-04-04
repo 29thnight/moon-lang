@@ -32,10 +32,9 @@
     "visualstudiotoolsforunity.vstuc"
   ],
   "activationEvents": [
-    "onLanguage:moon",
     "workspaceContains:**/*.mn"
   ],
-  "main": "./out/extension.js",
+  "main": "./dist/extension.js",
   "capabilities": {
     "untrustedWorkspaces": {
       "supported": "limited",
@@ -67,8 +66,13 @@
     "languages": [
       {
         "id": "moon",
-        "aliases": ["Moon", "moon"],
-        "extensions": [".mn"],
+        "aliases": [
+          "Moon",
+          "moon"
+        ],
+        "extensions": [
+          ".mn"
+        ],
         "configuration": "./language-configuration.json",
         "icon": {
           "light": "./icons/moon-icon.svg",
@@ -105,6 +109,10 @@
       {
         "command": "moon.showGenerated",
         "title": "Moon: Show Generated C#"
+      },
+      {
+        "command": "moon.showSourceFromGenerated",
+        "title": "Moon: Show Original Moon Source"
       },
       {
         "command": "moon.visualize",
@@ -163,33 +171,169 @@
       "editor.tokenColorCustomizations": {
         "[*]": {
           "textMateRules": [
-            { "scope": "keyword.other.moon", "settings": { "foreground": "#cf8e6d" } },
-            { "scope": "keyword.control.moon", "settings": { "foreground": "#cf8e6d" } },
-            { "scope": "keyword.control.import.moon", "settings": { "foreground": "#cf8e6d" } },
-            { "scope": "storage.modifier.moon", "settings": { "foreground": "#cf8e6d" } },
-            { "scope": "constant.language.moon", "settings": { "foreground": "#cf8e6d" } },
-            { "scope": "variable.language.this.moon", "settings": { "foreground": "#cf8e6d" } },
-            { "scope": "support.class.moon", "settings": { "foreground": "#16baac" } },
-            { "scope": "entity.name.type.moon", "settings": { "foreground": "#bcbec4" } },
-            { "scope": "entity.name.type.class.moon", "settings": { "foreground": "#16baac" } },
-            { "scope": "entity.name.function.moon", "settings": { "foreground": "#56a8f5" } },
-            { "scope": "entity.name.function.call.moon", "settings": { "foreground": "#57aaf7" } },
-            { "scope": "entity.name.function.decorator.moon", "settings": { "foreground": "#b3ae60" } },
-            { "scope": "punctuation.definition.annotation.moon", "settings": { "foreground": "#b3ae60" } },
-            { "scope": "support.function.moon", "settings": { "foreground": "#56a8f5" } },
-            { "scope": "constant.numeric.moon", "settings": { "foreground": "#bcbec4" } },
-            { "scope": "string.quoted.double.moon", "settings": { "foreground": "#6aab73" } },
-            { "scope": "constant.character.escape.moon", "settings": { "foreground": "#cf8e6d" } },
-            { "scope": "comment.line.double-slash.moon", "settings": { "foreground": "#7a7e85" } },
-            { "scope": "comment.block.moon", "settings": { "foreground": "#7a7e85" } },
-            { "scope": "variable.other.enummember.moon", "settings": { "foreground": "#c77dbb", "fontStyle": "italic" } },
-            { "scope": "variable.other.member.moon", "settings": { "foreground": "#bcbec4" } },
-            { "scope": "keyword.operator.moon", "settings": { "foreground": "#bcbec4" } },
-            { "scope": "punctuation.separator.moon", "settings": { "foreground": "#bcbec4" } },
-            { "scope": "punctuation.bracket.angle.moon", "settings": { "foreground": "#bcbec4" } },
-            { "scope": "punctuation.definition.interpolation.begin.moon", "settings": { "foreground": "#cf8e6d" } },
-            { "scope": "punctuation.definition.interpolation.end.moon", "settings": { "foreground": "#cf8e6d" } },
-            { "scope": "variable.other.interpolation.moon", "settings": { "foreground": "#c77dbb" } }
+            {
+              "scope": "keyword.other.moon",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "keyword.control.moon",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "keyword.control.import.moon",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "storage.modifier.moon",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "constant.language.moon",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "variable.language.this.moon",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "support.class.moon",
+              "settings": {
+                "foreground": "#16baac"
+              }
+            },
+            {
+              "scope": "entity.name.type.moon",
+              "settings": {
+                "foreground": "#bcbec4"
+              }
+            },
+            {
+              "scope": "entity.name.type.class.moon",
+              "settings": {
+                "foreground": "#16baac"
+              }
+            },
+            {
+              "scope": "entity.name.function.moon",
+              "settings": {
+                "foreground": "#56a8f5"
+              }
+            },
+            {
+              "scope": "entity.name.function.call.moon",
+              "settings": {
+                "foreground": "#57aaf7"
+              }
+            },
+            {
+              "scope": "entity.name.function.decorator.moon",
+              "settings": {
+                "foreground": "#b3ae60"
+              }
+            },
+            {
+              "scope": "punctuation.definition.annotation.moon",
+              "settings": {
+                "foreground": "#b3ae60"
+              }
+            },
+            {
+              "scope": "support.function.moon",
+              "settings": {
+                "foreground": "#56a8f5"
+              }
+            },
+            {
+              "scope": "constant.numeric.moon",
+              "settings": {
+                "foreground": "#bcbec4"
+              }
+            },
+            {
+              "scope": "string.quoted.double.moon",
+              "settings": {
+                "foreground": "#6aab73"
+              }
+            },
+            {
+              "scope": "constant.character.escape.moon",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "comment.line.double-slash.moon",
+              "settings": {
+                "foreground": "#7a7e85"
+              }
+            },
+            {
+              "scope": "comment.block.moon",
+              "settings": {
+                "foreground": "#7a7e85"
+              }
+            },
+            {
+              "scope": "variable.other.enummember.moon",
+              "settings": {
+                "foreground": "#c77dbb",
+                "fontStyle": "italic"
+              }
+            },
+            {
+              "scope": "variable.other.member.moon",
+              "settings": {
+                "foreground": "#bcbec4"
+              }
+            },
+            {
+              "scope": "keyword.operator.moon",
+              "settings": {
+                "foreground": "#bcbec4"
+              }
+            },
+            {
+              "scope": "punctuation.separator.moon",
+              "settings": {
+                "foreground": "#bcbec4"
+              }
+            },
+            {
+              "scope": "punctuation.bracket.angle.moon",
+              "settings": {
+                "foreground": "#bcbec4"
+              }
+            },
+            {
+              "scope": "punctuation.definition.interpolation.begin.moon",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "punctuation.definition.interpolation.end.moon",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "variable.other.interpolation.moon",
+              "settings": {
+                "foreground": "#c77dbb"
+              }
+            }
           ]
         }
       }
@@ -221,16 +365,22 @@
     }
   },
   "scripts": {
-    "compile": "tsc -p ./",
-    "test": "npm run compile && node --test out/test/project-config.test.js out/test/compiler-resolver.test.js out/test/completion-helpers.test.js",
-    "watch": "tsc -watch -p ./",
-    "package": "npx @vscode/vsce package"
+    "bundle": "node ./scripts/bundle.mjs",
+    "compile": "npm run compile:tests && npm run bundle",
+    "compile:tests": "tsc -p ./",
+    "test": "npm run compile && node --test out/test/project-config.test.js out/test/compiler-resolver.test.js out/test/completion-helpers.test.js out/test/diagnostic-range.test.js out/test/generated-source-map.test.js out/test/navigation-helpers.test.js out/test/navigation-rename.test.js out/test/symbol-helpers.test.js",
+    "typecheck": "tsc --noEmit -p ./",
+    "watch": "node ./scripts/bundle.mjs --watch",
+    "watch:tests": "tsc -watch -p ./",
+    "package": "npx @vscode/vsce package",
+    "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
-    "@types/better-sqlite3": "^7.6.13",
     "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.28.0",
     "typescript": "^5.3.0"
   },
   "optionalDependencies": {

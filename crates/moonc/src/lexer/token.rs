@@ -1,12 +1,14 @@
+use serde::Serialize;
+
 /// Source position for diagnostics.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Position {
     pub line: u32,
     pub col: u32,
 }
 
 /// Source span — a range in a source file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct Span {
     pub start: Position,
     pub end: Position,

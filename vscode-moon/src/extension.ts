@@ -5,7 +5,16 @@ import { MoonCompletionProvider } from './completion';
 import { MoonExplorerProvider } from './sidebar';
 import { MoonVisualizer } from './visualizer';
 import { MoonGraphView } from './graph-view';
+import {
+    findGeneratedSpanForSourcePosition,
+    findSourceAnchorForGeneratedPosition,
+    readGeneratedSourceMap,
+    resolveSourceMapSourcePath,
+    type MoonGeneratedSourceMapSpan,
+} from './generated-source-map';
 import { insertLifecycleBlock } from './lifecycle-inserter';
+import { MoonNavigationProvider } from './navigation';
+import { MoonSymbolProvider } from './symbols';
 import { resolveGeneratedCsPath as resolveGeneratedCsPathFromConfig } from './project-config';
 
 let diagCollection: vscode.DiagnosticCollection;
@@ -32,11 +41,22 @@ export function activate(context: vscode.ExtensionContext) {
         }
     });
 
+    const symbolProvider = new MoonSymbolProvider();
+
     // File watcher: refresh sidebar on .mn file changes
     const mnWatcher = vscode.workspace.createFileSystemWatcher('**/*.mn');
-    mnWatcher.onDidCreate(() => moonExplorer.refresh());
-    mnWatcher.onDidDelete(() => moonExplorer.refresh());
-    mnWatcher.onDidChange(() => moonExplorer.refresh());
+    mnWatcher.onDidCreate(() => {
+        moonExplorer.refresh();
+        symbolProvider.invalidate();
+    });
+    mnWatcher.onDidDelete(() => {
+        moonExplorer.refresh();
+        symbolProvider.invalidate();
+    });
+    mnWatcher.onDidChange(() => {
+        moonExplorer.refresh();
+        symbolProvider.invalidate();
+    });
     context.subscriptions.push(mnWatcher);
 
     // Visualizer command
@@ -73,6 +93,31 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
+    const navigationProvider = new MoonNavigationProvider();
+    context.subscriptions.push(
+        vscode.languages.registerDefinitionProvider(
+            { language: 'moon', scheme: 'file' },
+            navigationProvider,
+        ),
+        vscode.languages.registerHoverProvider(
+            { language: 'moon', scheme: 'file' },
+            navigationProvider,
+        ),
+        vscode.languages.registerReferenceProvider(
+            { language: 'moon', scheme: 'file' },
+            navigationProvider,
+        ),
+        vscode.languages.registerRenameProvider(
+            { language: 'moon', scheme: 'file' },
+            navigationProvider,
+        ),
+        vscode.languages.registerDocumentSymbolProvider(
+            { language: 'moon', scheme: 'file' },
+            symbolProvider,
+        ),
+        vscode.languages.registerWorkspaceSymbolProvider(symbolProvider),
+    );
+
     // Diagnostic collection (always created, but only used in trusted mode)
     diagCollection = vscode.languages.createDiagnosticCollection('moon');
     context.subscriptions.push(diagCollection);
@@ -100,6 +145,7 @@ export function activate(context: vscode.ExtensionContext) {
                     checkTimer = setTimeout(() => {
                         checkDocument(e.document, diagCollection, statusBar);
                         moonExplorer.refresh();
+                        symbolProvider.invalidate();
                     }, 500);
                 }
             })
@@ -112,6 +158,7 @@ export function activate(context: vscode.ExtensionContext) {
                     if (checkTimer) { clearTimeout(checkTimer); }
                     checkDocument(doc, diagCollection, statusBar);
                     moonExplorer.refresh();
+                    symbolProvider.invalidate();
                 }
             })
         );
@@ -121,6 +168,7 @@ export function activate(context: vscode.ExtensionContext) {
             vscode.workspace.onDidOpenTextDocument(doc => {
                 if (doc.languageId === 'moon') {
                     checkDocument(doc, diagCollection, statusBar);
+                    symbolProvider.invalidate();
                 }
             })
         );
@@ -237,10 +285,61 @@ export function activate(context: vscode.ExtensionContext) {
             }
 
             const csUri = vscode.Uri.file(csPath);
-            await vscode.commands.executeCommand('vscode.open', csUri, {
+            const sourceMap = readGeneratedSourceMap(csPath);
+            const generatedSelection = sourceMapSpanToRange(sourceMap
+                ? findGeneratedSpanForSourcePosition(
+                    sourceMap,
+                    editor.selection.active.line + 1,
+                    editor.selection.active.character + 1,
+                )
+                : null);
+            const csDoc = await vscode.workspace.openTextDocument(csUri);
+            await vscode.window.showTextDocument(csDoc, {
                 viewColumn: vscode.ViewColumn.Beside,
                 preview: true,
-                preserveFocus: true
+                preserveFocus: true,
+                selection: generatedSelection,
+            });
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('moon.showSourceFromGenerated', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor || editor.document.uri.scheme !== 'file' || path.extname(editor.document.uri.fsPath).toLowerCase() !== '.cs') {
+                vscode.window.showWarningMessage('No generated .cs file is open');
+                return;
+            }
+
+            const generatedPath = editor.document.uri.fsPath;
+            const sourceMap = readGeneratedSourceMap(generatedPath);
+            if (!sourceMap) {
+                vscode.window.showWarningMessage('Moon source map sidecar not found for this generated .cs file. Compile first.');
+                return;
+            }
+
+            const sourceAnchor = findSourceAnchorForGeneratedPosition(
+                sourceMap,
+                editor.selection.active.line + 1,
+                editor.selection.active.character + 1,
+            );
+            if (!sourceAnchor) {
+                vscode.window.showWarningMessage('No Moon source anchor was found for the current generated C# position.');
+                return;
+            }
+
+            const sourcePath = resolveSourceMapSourcePath(generatedPath, sourceMap, getWorkspaceRoots());
+            if (!sourcePath) {
+                vscode.window.showWarningMessage('Moon source path could not be resolved from the generated source map.');
+                return;
+            }
+
+            const sourceUri = vscode.Uri.file(sourcePath);
+            const sourceDoc = await vscode.workspace.openTextDocument(sourceUri);
+            await vscode.window.showTextDocument(sourceDoc, {
+                viewColumn: editor.viewColumn,
+                preview: true,
+                selection: sourceMapSpanToRange(sourceAnchor.source_span),
             });
         })
     );
@@ -258,8 +357,29 @@ export function activate(context: vscode.ExtensionContext) {
  * Reads output_dir from .mnproject and falls back to common generated-code locations.
  */
 function resolveGeneratedCsPath(mnPath: string): string | null {
-    const workspaceRoots = (vscode.workspace.workspaceFolders || []).map(folder => folder.uri.fsPath);
-    return resolveGeneratedCsPathFromConfig(mnPath, workspaceRoots);
+    return resolveGeneratedCsPathFromConfig(mnPath, getWorkspaceRoots());
+}
+
+function getWorkspaceRoots(): string[] {
+    return (vscode.workspace.workspaceFolders || []).map(folder => folder.uri.fsPath);
+}
+
+function sourceMapSpanToRange(span: MoonGeneratedSourceMapSpan | null | undefined): vscode.Range | undefined {
+    if (!span) {
+        return undefined;
+    }
+
+    const startLine = Math.max(0, span.line - 1);
+    const startCol = Math.max(0, span.col - 1);
+    let endLine = Math.max(startLine, span.end_line - 1);
+    let endCol = Math.max(0, span.end_col - 1);
+
+    if (endLine < startLine || (endLine === startLine && endCol <= startCol)) {
+        endLine = startLine;
+        endCol = startCol + 1;
+    }
+
+    return new vscode.Range(startLine, startCol, endLine, endCol);
 }
 
 function updateStatusBarVisibility(_trusted?: boolean) {

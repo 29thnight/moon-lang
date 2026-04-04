@@ -165,27 +165,56 @@ namespace Moon.Editor
         {
             var obj = EditorUtility.InstanceIDToObject(instanceID);
         #pragma warning restore CS0618
-            if (obj == null) return false;
+            if (obj == null)
+            {
+                return MoonConsoleRemapOpener.TryOpenSelectedRemappedFrame(MoonProjectSettings.GetProjectRoot());
+            }
             string path = AssetDatabase.GetAssetPath(obj);
 
-            // Case 1: Direct .mn file double-click
+            // Case 1: Direct .mn file double-click (also triggered when user clicks a remapped console log)
             if (path.EndsWith(".mn"))
             {
-                OpenInEditor(Path.Combine(MoonProjectSettings.GetProjectRoot(), path), line);
+                string projectRoot = MoonProjectSettings.GetProjectRoot();
+                string fullPath = Path.Combine(projectRoot, path);
+                int sourceLine = Math.Max(1, line);
+                int sourceCol = 1;
+
+                // Prefer the location cache populated by MoonRuntimeStackTraceRemapper when the
+                // log was emitted — m_ActiveText reflection is unreliable at click time because
+                // the console loses focus before OnOpenAsset fires.
+                if (!MoonRuntimeStackTraceRemapper.TryConsumeCachedLocation(fullPath, out sourceLine, out sourceCol))
+                {
+                    // Fallback: try reading m_ActiveText (works for direct double-click with known line)
+                    if (!MoonConsoleRemapOpener.TryGetSelectedLocationForAsset(projectRoot, fullPath, out sourceLine, out sourceCol))
+                    {
+                        sourceLine = Math.Max(1, line);
+                        sourceCol = 1;
+                    }
+                }
+
+                OpenInEditor(fullPath, sourceLine, sourceCol);
                 return true;
             }
 
             // Case 2: Generated .cs file — redirect to .mn source
             if (path.EndsWith(".cs"))
             {
+                string projectRoot = MoonProjectSettings.GetProjectRoot();
                 string outputDir = MoonProjectSettings.GetOutputDir();
                 if (path.StartsWith(outputDir) || path.Contains("com.moon.generated"))
                 {
+                    string fullGeneratedPath = Path.Combine(projectRoot, path);
+                    if (MoonSourceMap.TryResolveSourceLocation(projectRoot, fullGeneratedPath, line, out string sourcePath, out int sourceLine, out int sourceCol))
+                    {
+                        OpenInEditor(sourcePath, sourceLine, sourceCol);
+                        return true;
+                    }
+
                     string className = Path.GetFileNameWithoutExtension(path);
                     string mnPath = FindMoonSource(className);
                     if (mnPath != null)
                     {
-                        OpenInEditor(Path.Combine(MoonProjectSettings.GetProjectRoot(), mnPath), line);
+                        OpenInEditor(Path.Combine(projectRoot, mnPath), line, 1);
                         return true;
                     }
                 }
@@ -219,23 +248,9 @@ namespace Moon.Editor
             return null;
         }
 
-        private static void OpenInEditor(string fullPath, int line)
+        private static void OpenInEditor(string fullPath, int line, int col)
         {
-            try
-            {
-                var psi = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "code",
-                    Arguments = $"--goto \"{fullPath}\":{Math.Max(1, line)}",
-                    UseShellExecute = true,
-                    CreateNoWindow = true
-                };
-                System.Diagnostics.Process.Start(psi);
-            }
-            catch
-            {
-                EditorUtility.OpenWithDefaultApp(fullPath);
-            }
+            MoonEditorLauncher.OpenInEditor(fullPath, line, col);
         }
     }
 }

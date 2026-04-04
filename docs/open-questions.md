@@ -19,7 +19,7 @@
 - 옵션 B: 사용자가 명시적으로 `unlisten` 호출
 - 옵션 C: v1에서는 해제 없음 (Unity가 GameObject 파괴 시 정리)
 
-**현재 결정:** 미정. 프로토타입 후 결정.
+**현재 결정:** 옵션 C. v1에서는 등록만 지원하고 자동 해제는 v2에서 재검토.
 
 ## Q4: `data class`와 Unity 직렬화
 `data class`를 Unity Inspector에서 사용하려면 `[System.Serializable]`이 필요.

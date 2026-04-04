@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import type { MoonCSharpHoverInfo, MoonCSharpLookupTarget } from './csharp-navigation';
+import { findGeneratedSpanForTarget, readGeneratedSourceMap } from './generated-source-map';
 import { getOutputDirCandidates, readMoonProject } from './project-config';
 
 /**
@@ -15,6 +17,27 @@ export class CSharpBridge {
 
     constructor() {
         this.detectOutputDir();
+    }
+
+    async getHoverDetails(target: MoonCSharpLookupTarget): Promise<MoonCSharpHoverInfo | null> {
+        if (!this.ready) {
+            return null;
+        }
+
+        const generatedFile = this.getGeneratedFilePath(target.typeName);
+        const hoverText = target.memberName
+            ? await this.getMemberHoverFromCSharp(target.typeName, target.memberName, generatedFile)
+            : await this.getTypeHoverFromCSharp(target.typeName, generatedFile);
+
+        if (!generatedFile && !hoverText) {
+            return null;
+        }
+
+        return {
+            ...target,
+            generatedFile,
+            hoverText,
+        };
     }
 
     private detectOutputDir() {
@@ -41,8 +64,8 @@ export class CSharpBridge {
         if (!this.ready) return [];
 
         // Find the generated .cs file for this type
-        const csFile = path.join(this.outputDir, typeName + '.cs');
-        if (!fs.existsSync(csFile)) return [];
+        const csFile = this.getGeneratedFilePath(typeName);
+        if (!csFile || !fs.existsSync(csFile)) return [];
 
         try {
             const csUri = vscode.Uri.file(csFile);
@@ -51,7 +74,7 @@ export class CSharpBridge {
             // Find a position inside the class body where we can query completions
             // Look for "this." or the class name to find a good position
             const text = csDoc.getText();
-            const classMatch = text.match(new RegExp(`class\\s+${typeName}`));
+            const classMatch = text.match(new RegExp(`class\\s+${escapeRegExp(typeName)}`));
             if (!classMatch || classMatch.index === undefined) return [];
 
             // Find first method body — look for opening { after a method
@@ -99,42 +122,7 @@ export class CSharpBridge {
         typeName: string,
         memberName: string
     ): Promise<string | undefined> {
-        if (!this.ready) return undefined;
-
-        const csFile = path.join(this.outputDir, typeName + '.cs');
-        if (!fs.existsSync(csFile)) return undefined;
-
-        try {
-            const csUri = vscode.Uri.file(csFile);
-            const csDoc = await vscode.workspace.openTextDocument(csUri);
-            const text = csDoc.getText();
-
-            // Find the member in the generated C# file
-            const memberRegex = new RegExp(`\\b${memberName}\\b`);
-            const match = memberRegex.exec(text);
-            if (!match || match.index === undefined) return undefined;
-
-            const pos = csDoc.positionAt(match.index);
-
-            const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
-                'vscode.executeHoverProvider',
-                csUri,
-                pos
-            );
-
-            if (!hovers || hovers.length === 0) return undefined;
-
-            // Extract text from hover
-            return hovers.map(h =>
-                h.contents.map(c => {
-                    if (typeof c === 'string') return c;
-                    if ('value' in c) return c.value;
-                    return '';
-                }).join('\n')
-            ).join('\n');
-        } catch {
-            return undefined;
-        }
+        return this.getMemberHoverFromCSharp(typeName, memberName, this.getGeneratedFilePath(typeName));
     }
 
     /**
@@ -183,4 +171,191 @@ export class CSharpBridge {
             return [];
         }
     }
+
+    private getGeneratedFilePath(typeName: string): string | undefined {
+        if (!this.ready) {
+            return undefined;
+        }
+
+        const candidate = path.join(this.outputDir, `${typeName}.cs`);
+        return fs.existsSync(candidate) ? candidate : undefined;
+    }
+
+    private async getTypeHoverFromCSharp(typeName: string, generatedFile?: string): Promise<string | undefined> {
+        if (generatedFile) {
+            const hoverFromSourceMap = await this.getHoverFromSourceMap(generatedFile, typeName);
+            if (hoverFromSourceMap) {
+                return hoverFromSourceMap;
+            }
+        }
+
+        for (const csFile of this.getHoverSearchFiles(generatedFile)) {
+            try {
+                const csUri = vscode.Uri.file(csFile);
+                const csDoc = await vscode.workspace.openTextDocument(csUri);
+                const index = this.findTypeIndex(csDoc.getText(), typeName);
+                if (index === undefined) {
+                    continue;
+                }
+
+                return this.getHoverAt(csUri, csDoc.positionAt(index));
+            } catch {
+                continue;
+            }
+        }
+
+        return undefined;
+    }
+
+    private async getMemberHoverFromCSharp(
+        typeName: string,
+        memberName: string,
+        generatedFile?: string,
+    ): Promise<string | undefined> {
+        const csFile = generatedFile ?? this.getGeneratedFilePath(typeName);
+        if (!csFile) {
+            return undefined;
+        }
+
+        try {
+            const csUri = vscode.Uri.file(csFile);
+            const csDoc = await vscode.workspace.openTextDocument(csUri);
+            const sourceMapPosition = this.getSourceMapPosition(csFile, typeName, memberName);
+            if (sourceMapPosition) {
+                return this.getHoverAt(csUri, sourceMapPosition);
+            }
+
+            const index = this.findMemberIndex(csDoc.getText(), memberName);
+            if (index === undefined) {
+                return undefined;
+            }
+
+            return this.getHoverAt(csUri, csDoc.positionAt(index));
+        } catch {
+            return undefined;
+        }
+    }
+
+    private async getHoverFromSourceMap(
+        generatedFile: string,
+        typeName: string,
+        memberName?: string,
+    ): Promise<string | undefined> {
+        const sourceMapPosition = this.getSourceMapPosition(generatedFile, typeName, memberName);
+        if (!sourceMapPosition) {
+            return undefined;
+        }
+
+        try {
+            const csUri = vscode.Uri.file(generatedFile);
+            return this.getHoverAt(csUri, sourceMapPosition);
+        } catch {
+            return undefined;
+        }
+    }
+
+    private getSourceMapPosition(
+        generatedFile: string,
+        typeName: string,
+        memberName?: string,
+    ): vscode.Position | undefined {
+        const sourceMap = readGeneratedSourceMap(generatedFile);
+        const span = sourceMap ? findGeneratedSpanForTarget(sourceMap, typeName, memberName) : null;
+        if (!span) {
+            return undefined;
+        }
+
+        return new vscode.Position(
+            Math.max(0, span.line - 1),
+            Math.max(0, span.col - 1),
+        );
+    }
+
+    private getHoverSearchFiles(preferredFile?: string): string[] {
+        if (!this.ready || !fs.existsSync(this.outputDir)) {
+            return [];
+        }
+
+        const files = fs.readdirSync(this.outputDir)
+            .filter(name => name.endsWith('.cs'))
+            .map(name => path.join(this.outputDir, name));
+
+        if (!preferredFile) {
+            return files;
+        }
+
+        return [preferredFile, ...files.filter(file => file !== preferredFile)];
+    }
+
+    private async getHoverAt(csUri: vscode.Uri, position: vscode.Position): Promise<string | undefined> {
+        const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+            'vscode.executeHoverProvider',
+            csUri,
+            position,
+        );
+
+        if (!hovers || hovers.length === 0) {
+            return undefined;
+        }
+
+        return hovers
+            .map(hover => hover.contents
+                .map(content => {
+                    if (typeof content === 'string') {
+                        return content;
+                    }
+
+                    if ('value' in content) {
+                        return content.value;
+                    }
+
+                    return '';
+                })
+                .filter(Boolean)
+                .join('\n'))
+            .filter(Boolean)
+            .join('\n');
+    }
+
+    private findTypeIndex(text: string, typeName: string): number | undefined {
+        const escaped = escapeRegExp(typeName);
+        const patterns = [
+            new RegExp(`\\b(?:class|enum|struct|interface)\\s+(${escaped})\\b`),
+            new RegExp(`\\b(${escaped})\\b`),
+        ];
+
+        return findCaptureIndex(text, patterns);
+    }
+
+    private findMemberIndex(text: string, memberName: string): number | undefined {
+        const escaped = escapeRegExp(memberName);
+        const patterns = [
+            new RegExp(`\\b(${escaped})\\b\\s*\\(`),
+            new RegExp(`\\b(${escaped})\\b\\s*(?:[;=,])`),
+            new RegExp(`\\b(${escaped})\\b`),
+        ];
+
+        return findCaptureIndex(text, patterns);
+    }
+}
+
+function findCaptureIndex(text: string, patterns: RegExp[]): number | undefined {
+    for (const pattern of patterns) {
+        const match = pattern.exec(text);
+        const captured = match?.[1];
+        if (!match || match.index === undefined || !captured) {
+            continue;
+        }
+
+        const captureOffset = match[0].indexOf(captured);
+        if (captureOffset >= 0) {
+            return match.index + captureOffset;
+        }
+    }
+
+    return undefined;
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

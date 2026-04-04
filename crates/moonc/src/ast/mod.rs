@@ -27,31 +27,41 @@ pub struct UsingDecl {
 pub enum Decl {
     Component {
         name: String,
+        name_span: Span,
         base_class: String,
+        base_class_span: Span,
         interfaces: Vec<String>,
+        interface_spans: Vec<Span>,
         members: Vec<Member>,
         span: Span,
     },
     Asset {
         name: String,
+        name_span: Span,
         base_class: String,
+        base_class_span: Span,
         members: Vec<Member>,
         span: Span,
     },
     Class {
         name: String,
+        name_span: Span,
         super_class: Option<String>,
+        super_class_span: Option<Span>,
         interfaces: Vec<String>,
+        interface_spans: Vec<Span>,
         members: Vec<Member>,
         span: Span,
     },
     DataClass {
         name: String,
+        name_span: Span,
         fields: Vec<Param>,
         span: Span,
     },
     Enum {
         name: String,
+        name_span: Span,
         params: Vec<EnumParam>,
         entries: Vec<EnumEntry>,
         span: Span,
@@ -59,6 +69,7 @@ pub enum Decl {
     /// `attribute Name(params) : Target, Target` → lowered to C# attribute class
     Attribute {
         name: String,
+        name_span: Span,
         fields: Vec<Param>,
         targets: Vec<String>,  // e.g. ["Method", "Property"]. Empty = All
         span: Span,
@@ -74,6 +85,7 @@ pub struct EnumParam {
 #[derive(Debug, Clone)]
 pub struct EnumEntry {
     pub name: String,
+    pub name_span: Span,
     pub args: Vec<Expr>,
     pub span: Span,
 }
@@ -87,6 +99,7 @@ pub enum Member {
         visibility: Option<Visibility>,
         mutability: Mutability,  // val or var
         name: String,
+        name_span: Span,
         ty: TypeRef,
         init: Option<Expr>,
         span: Span,
@@ -95,27 +108,32 @@ pub enum Member {
         visibility: Visibility,
         mutability: Mutability,
         name: String,
+        name_span: Span,
         ty: Option<TypeRef>,
         init: Option<Expr>,
         span: Span,
     },
     Require {
         name: String,
+        name_span: Span,
         ty: TypeRef,
         span: Span,
     },
     Optional {
         name: String,
+        name_span: Span,
         ty: TypeRef,
         span: Span,
     },
     Child {
         name: String,
+        name_span: Span,
         ty: TypeRef,
         span: Span,
     },
     Parent {
         name: String,
+        name_span: Span,
         ty: TypeRef,
         span: Span,
     },
@@ -123,6 +141,7 @@ pub enum Member {
         visibility: Visibility,
         is_override: bool,
         name: String,
+        name_span: Span,
         params: Vec<Param>,
         return_ty: Option<TypeRef>,
         body: FuncBody,
@@ -130,6 +149,7 @@ pub enum Member {
     },
     Coroutine {
         name: String,
+        name_span: Span,
         params: Vec<Param>,
         body: Block,
         span: Span,
@@ -143,6 +163,7 @@ pub enum Member {
     IntrinsicFunc {
         visibility: Visibility,
         name: String,
+        name_span: Span,
         params: Vec<Param>,
         return_ty: Option<TypeRef>,
         code: String,
@@ -150,6 +171,7 @@ pub enum Member {
     },
     IntrinsicCoroutine {
         name: String,
+        name_span: Span,
         params: Vec<Param>,
         code: String,
         span: Span,
@@ -162,12 +184,14 @@ pub enum Member {
 pub enum Stmt {
     ValDecl {
         name: String,
+        name_span: Span,
         ty: Option<TypeRef>,
         init: Expr,
         span: Span,
     },
     VarDecl {
         name: String,
+        name_span: Span,
         ty: Option<TypeRef>,
         init: Option<Expr>,
         span: Span,
@@ -195,6 +219,7 @@ pub enum Stmt {
     },
     For {
         var_name: String,
+        name_span: Span,
         iterable: Expr,
         body: Block,
         span: Span,
@@ -306,17 +331,20 @@ pub enum Expr {
     MemberAccess {
         receiver: Box<Expr>,
         name: String,
+        name_span: Span,
         span: Span,
     },
     SafeCall {
         receiver: Box<Expr>,
         name: String,
+        name_span: Span,
         span: Span,
     },
     /// Safe method call: expr?.name(args) — null check + method call
     SafeMethodCall {
         receiver: Box<Expr>,
         name: String,
+        name_span: Span,
         type_args: Vec<TypeRef>,
         args: Vec<Arg>,
         span: Span,
@@ -333,6 +361,7 @@ pub enum Expr {
     Call {
         receiver: Option<Box<Expr>>,
         name: String,
+        name_span: Span,
         type_args: Vec<TypeRef>,
         args: Vec<Arg>,
         span: Span,
@@ -423,6 +452,7 @@ pub struct Block {
 #[derive(Debug, Clone)]
 pub struct Param {
     pub name: String,
+    pub name_span: Span,
     pub ty: TypeRef,
     pub default: Option<Expr>,
     pub span: Span,

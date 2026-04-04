@@ -13,6 +13,7 @@ __pycache__/
 claude-progress.md
 
 vscode-moon/node_modules/
+vscode-moon/dist/
 vscode-moon/out/
 
 unity_docs_scraper/__pycache__/

@@ -8,6 +8,7 @@ pub struct Symbol {
     pub ty: MoonType,
     pub kind: SymbolKind,
     pub mutable: bool,
+    pub definition_id: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

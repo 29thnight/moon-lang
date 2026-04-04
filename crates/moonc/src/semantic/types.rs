@@ -1,10 +1,12 @@
+use serde::Serialize;
+
 /// Moon type system representation.
 ///
 /// Every expression and symbol has a `MoonType`. The type system enforces
 /// null safety at compile time.
 
 /// The core type enum.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum MoonType {
     /// Primitive types: Int, Float, Double, Bool, String, Long, Byte
     Primitive(PrimitiveKind),
@@ -28,7 +30,7 @@ pub enum MoonType {
     Error,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum PrimitiveKind {
     Int,
     Float,

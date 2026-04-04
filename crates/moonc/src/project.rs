@@ -3,12 +3,12 @@
 //! Reads a TOML project file that configures the Moon build pipeline.
 
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
 use std::fs;
+use std::path::{Path, PathBuf};
 
 const PROJECT_FILE: &str = ".mnproject";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct MoonProject {
     pub project: ProjectSection,
     #[serde(default)]
@@ -16,17 +16,19 @@ pub struct MoonProject {
     #[serde(default)]
     pub source: SourceSection,
     #[serde(default)]
+    pub language: LanguageSection,
+    #[serde(default)]
     pub features: FeaturesSection,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ProjectSection {
     pub name: String,
     #[serde(default = "default_version")]
     pub moon_version: String,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct CompilerSection {
     #[serde(default = "default_moonc_path")]
     pub moonc_path: String,
@@ -36,7 +38,17 @@ pub struct CompilerSection {
     pub target_unity: String,
 }
 
-#[derive(Debug, Deserialize, Default)]
+impl Default for CompilerSection {
+    fn default() -> Self {
+        Self {
+            moonc_path: default_moonc_path(),
+            output_dir: default_output_dir(),
+            target_unity: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct SourceSection {
     #[serde(default = "default_include")]
     pub include: Vec<String>,
@@ -44,7 +56,33 @@ pub struct SourceSection {
     pub exclude: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, Default)]
+impl Default for SourceSection {
+    fn default() -> Self {
+        Self {
+            include: default_include(),
+            exclude: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LanguageSection {
+    #[serde(default = "default_language_version")]
+    pub version: String,
+    #[serde(default)]
+    pub features: Vec<String>,
+}
+
+impl Default for LanguageSection {
+    fn default() -> Self {
+        Self {
+            version: default_language_version(),
+            features: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct FeaturesSection {
     #[serde(default = "default_true")]
     pub auto_compile_on_save: bool,
@@ -54,7 +92,18 @@ pub struct FeaturesSection {
     pub pascal_case_methods: bool,
 }
 
+impl Default for FeaturesSection {
+    fn default() -> Self {
+        Self {
+            auto_compile_on_save: default_true(),
+            generate_meta_files: false,
+            pascal_case_methods: default_true(),
+        }
+    }
+}
+
 fn default_version() -> String { "0.1.0".into() }
+fn default_language_version() -> String { "1.0".into() }
 fn default_moonc_path() -> String { "moonc".into() }
 fn default_output_dir() -> String { "Assets/Generated/Moon".into() }
 fn default_include() -> Vec<String> { vec!["**/*.mn".into()] }

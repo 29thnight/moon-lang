@@ -58,6 +58,14 @@ namespace Moon.Editor
                 !csPath.Contains("__Generated/Moon"))
                 return false;
 
+            string projectRoot = MoonProjectSettings.GetProjectRoot();
+            string fullGeneratedPath = Path.Combine(projectRoot, csPath);
+            if (MoonSourceMap.TryResolveSourceLocation(projectRoot, fullGeneratedPath, line, out string sourcePath, out int sourceLine, out int sourceCol))
+            {
+                OpenInVSCode(sourcePath, sourceLine, sourceCol);
+                return true;
+            }
+
             // Find corresponding .mn file
             string className = monoScript.name;
             string mnPath = FindMnFile(className);
@@ -66,8 +74,8 @@ namespace Moon.Editor
                 return false;
 
             // Open the .mn file instead
-            string fullPath = Path.Combine(MoonProjectSettings.GetProjectRoot(), mnPath);
-            OpenInVSCode(fullPath, line);
+            string fullPath = Path.Combine(projectRoot, mnPath);
+            OpenInVSCode(fullPath, line, 1);
             return true; // Consumed — don't open .cs
         }
 
@@ -84,23 +92,9 @@ namespace Moon.Editor
             return null;
         }
 
-        private static void OpenInVSCode(string fullPath, int line)
+        private static void OpenInVSCode(string fullPath, int line, int col)
         {
-            try
-            {
-                var psi = new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "code",
-                    Arguments = $"--goto \"{fullPath}\":{System.Math.Max(1, line)}",
-                    UseShellExecute = true,
-                    CreateNoWindow = true
-                };
-                System.Diagnostics.Process.Start(psi);
-            }
-            catch
-            {
-                EditorUtility.OpenWithDefaultApp(fullPath);
-            }
+            MoonEditorLauncher.OpenInEditor(fullPath, line, col);
         }
     }
 }

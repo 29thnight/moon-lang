@@ -64,7 +64,7 @@
 - [x] 템플릿 (component, asset, class)
 - [x] 컨텍스트 메뉴 (Compile/Check/Build)
 - [x] 생성 코드 패키지 (`com.moon.generated`) 구조
-- [ ] Unity Console 진단 매핑 (클릭→소스 이동)
+- [x] Unity Console 진단 매핑 (클릭→소스 이동)
 
 ## 마일스톤 8: VSCode 확장 (v1.1) ✅
 - [x] TextMate 구문 강조 (59개 스코프)
@@ -83,10 +83,11 @@
 - [x] TestScript.mn — serialize, when, 함수, 로깅
 - [x] DirTestScript.mn — 컴포넌트 상속
 - [x] 생성 C# → Unity 컴파일 성공
+- [x] `unity-package/Tests/Editor` 패키지 내부 EditMode 테스트 기반 추가
 - [ ] 네거티브 테스트 케이스 확충
-- [ ] 추가 문법 커버리지 (coroutine, listen, intrinsic 등)
+- [ ] 추가 문법 커버리지 (listen, intrinsic 등)
 
 ## 다음 단계 (미구현)
 - [ ] v1.2: LSP 서버 (자동완성, go-to-definition, hover)
-- [ ] Unity Console 진단 매핑 (에러 클릭→.mn 소스 이동)
 - [ ] 디버거 소스 매핑 (#line 디렉티브 활용)
+- [ ] v2 확장 설계 기반 구현 시작 (`docs/v2-design.md` 기준: ProjectGraph, Typed HIR, source map, LSP, Unity 확장)
