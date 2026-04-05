@@ -13,6 +13,7 @@ import {
     type PrismGeneratedSourceMapSpan,
 } from './generated-source-map';
 import { insertLifecycleBlock } from './lifecycle-inserter';
+import { openFromStackTraceCommand } from './stack-trace-navigator';
 import { startPrismLanguageClient, stopPrismLanguageClient } from './lsp-client';
 import { PrismNavigationProvider } from './navigation';
 import { PrismSymbolProvider } from './symbols';
@@ -252,6 +253,12 @@ export async function activate(context: vscode.ExtensionContext) {
                 preview: true,
                 selection: sourceMapSpanToRange(sourceAnchor.source_span),
             });
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('prsm.openFromStackTrace', async () => {
+            await openFromStackTraceCommand(getWorkspaceRoots());
         })
     );
 

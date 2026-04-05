@@ -1,0 +1,39 @@
+{
+  "PrSM Unity Editor Attach": {
+    "scope": "json",
+    "prefix": "prsm-unity-attach",
+    "description": "Attach the VS Code debugger to a running Unity Editor process and remap .cs stack frames back to .prsm sources.",
+    "body": [
+      "{",
+      "  \"version\": \"0.2.0\",",
+      "  \"configurations\": [",
+      "    {",
+      "      \"name\": \"Attach to Unity (PrSM)\",",
+      "      \"type\": \"vstuc\",",
+      "      \"request\": \"attach\",",
+      "      \"$1\"",
+      "    }",
+      "  ]",
+      "}"
+    ]
+  },
+  "PrSM Unity Player Attach": {
+    "scope": "json",
+    "prefix": "prsm-unity-player",
+    "description": "Attach the VS Code debugger to a built Unity Player (standalone) process. Use when debugging a packaged build that uses PrSM-generated scripts.",
+    "body": [
+      "{",
+      "  \"version\": \"0.2.0\",",
+      "  \"configurations\": [",
+      "    {",
+      "      \"name\": \"Attach to Unity Player (PrSM)\",",
+      "      \"type\": \"vstuc\",",
+      "      \"request\": \"attach\",",
+      "      \"projectPath\": \"\\${workspaceFolder}\",",
+      "      \"$1\"",
+      "    }",
+      "  ]",
+      "}"
+    ]
+  }
+}

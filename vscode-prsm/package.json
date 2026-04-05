@@ -91,6 +91,10 @@
       {
         "language": "prsm",
         "path": "./snippets/prsm.code-snippets"
+      },
+      {
+        "language": "json",
+        "path": "./snippets/launch.code-snippets"
       }
     ],
     "commands": [
@@ -132,6 +136,10 @@
       {
         "command": "prsm.insertLifecycle",
         "title": "PrSM: Insert Lifecycle Block"
+      },
+      {
+        "command": "prsm.openFromStackTrace",
+        "title": "PrSM: Open Source from Stack Trace"
       }
     ],
     "menus": {
@@ -147,6 +155,11 @@
           "command": "prsm.insertLifecycle",
           "when": "editorLangId == prsm",
           "group": "1_modification@0"
+        },
+        {
+          "command": "prsm.openFromStackTrace",
+          "when": "editorTextFocus",
+          "group": "navigation@10"
         }
       ]
     },
@@ -165,6 +178,11 @@
         "command": "prsm.insertLifecycle",
         "key": "ctrl+shift+l",
         "when": "editorLangId == prsm"
+      },
+      {
+        "command": "prsm.openFromStackTrace",
+        "key": "ctrl+shift+t",
+        "when": "editorTextFocus"
       }
     ],
     "configurationDefaults": {
