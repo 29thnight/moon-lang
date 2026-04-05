@@ -375,6 +375,7 @@
     "watch": "node ./scripts/bundle.mjs --watch",
     "watch:tests": "tsc -watch -p ./",
     "package": "node ./scripts/package-vsix.mjs",
+    "verify": "node ./scripts/verify-package.mjs",
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {
