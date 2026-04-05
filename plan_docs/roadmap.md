@@ -75,6 +75,7 @@
 - [x] 라이프사이클 삽입 (Ctrl+Shift+L)
 - [x] Unity API 자동완성 (SQLite DB)
 - [x] C# DevKit 연동
+- [x] trusted workspace `prism lsp` 경로 (completion, definition, hover, references, rename, document/workspace symbols)
 - [x] VSIX 패키징 완료
 
 ## 마일스톤 9: 통합 테스트 (진행 중)
@@ -87,7 +88,8 @@
 - [ ] 네거티브 테스트 케이스 확충
 - [x] 추가 문법 커버리지 (listen, intrinsic 등)
 
-## 다음 단계 (미구현)
-- [ ] v1.2: LSP 서버 (자동완성, go-to-definition, hover)
-- [ ] 디버거 소스 매핑 (#line 디렉티브 활용)
-- [ ] v2 확장 설계 기반 구현 시작 (`docs/v2-design.md` 기준: ProjectGraph, Typed HIR, source map, LSP, Unity 확장)
+## 다음 단계
+- [ ] 패키징 / 설치 검증 자동화 (VSIX 에 최신 `prism.exe` 와 번들이 들어갔는지 확인)
+- [ ] 네거티브 테스트 케이스 확충
+- [ ] 디버깅 / source-map 워크플로 확장
+- [ ] 실제 Unity 프로젝트 기준 end-to-end 검증 확대

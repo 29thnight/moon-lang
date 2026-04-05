@@ -17,52 +17,52 @@ const DOC_GROUPS_EN: DocGroup[] = [
     id: 'get-started',
     title: 'Get started',
     items: [
-      { id: 'index', title: 'Introduction', path: '/docs/en/index.md' },
-      { id: 'overview', title: 'Overview', path: '/docs/en/overview.md' },
-      { id: 'getting-started', title: 'Quickstart', path: '/docs/en/getting-started.md' },
+      { id: 'index', title: 'Introduction', path: 'docs/en/index.md' },
+      { id: 'overview', title: 'Overview', path: 'docs/en/overview.md' },
+      { id: 'getting-started', title: 'Quickstart', path: 'docs/en/getting-started.md' },
     ]
   },
   {
     id: 'language',
     title: 'Language',
     items: [
-      { id: 'syntax', title: 'Syntax', path: '/docs/en/syntax.md' },
-      { id: 'types', title: 'Types', path: '/docs/en/types.md' },
-      { id: 'functions', title: 'Functions', path: '/docs/en/functions.md' },
-      { id: 'operators', title: 'Operators', path: '/docs/en/operators.md' },
-      { id: 'control-flow', title: 'Control Flow', path: '/docs/en/pattern-matching-and-control-flow.md' },
-      { id: 'coroutines', title: 'Coroutines', path: '/docs/en/coroutines.md' },
-      { id: 'strings', title: 'Strings & Collections', path: '/docs/en/strings-and-collections.md' },
+      { id: 'syntax', title: 'Syntax', path: 'docs/en/syntax.md' },
+      { id: 'types', title: 'Types', path: 'docs/en/types.md' },
+      { id: 'functions', title: 'Functions', path: 'docs/en/functions.md' },
+      { id: 'operators', title: 'Operators', path: 'docs/en/operators.md' },
+      { id: 'control-flow', title: 'Control Flow', path: 'docs/en/pattern-matching-and-control-flow.md' },
+      { id: 'coroutines', title: 'Coroutines', path: 'docs/en/coroutines.md' },
+      { id: 'strings', title: 'Strings & Collections', path: 'docs/en/strings-and-collections.md' },
     ]
   },
   {
     id: 'core',
     title: 'Core concepts',
     items: [
-      { id: 'data-models', title: 'Data Models', path: '/docs/en/data-models.md' },
-      { id: 'lifecycle', title: 'Lifecycle', path: '/docs/en/lifecycle.md' },
-      { id: 'events', title: 'Events & Intrinsics', path: '/docs/en/events-and-intrinsic.md' },
-      { id: 'declarations', title: 'Declarations & Fields', path: '/docs/en/declarations-and-fields.md' },
+      { id: 'data-models', title: 'Data Models', path: 'docs/en/data-models.md' },
+      { id: 'lifecycle', title: 'Lifecycle', path: 'docs/en/lifecycle.md' },
+      { id: 'events', title: 'Events & Intrinsics', path: 'docs/en/events-and-intrinsic.md' },
+      { id: 'declarations', title: 'Declarations & Fields', path: 'docs/en/declarations-and-fields.md' },
     ]
   },
   {
     id: 'tooling',
     title: 'Tooling & Integration',
     items: [
-      { id: 'cli', title: 'CLI', path: '/docs/en/cli.md' },
-      { id: 'unity', title: 'Unity Integration', path: '/docs/en/unity-integration.md' },
-      { id: 'vscode', title: 'VS Code Extension', path: '/docs/en/vscode-extension.md' },
-      { id: 'config', title: 'Project Configuration', path: '/docs/en/project-configuration-and-interop.md' },
+      { id: 'cli', title: 'CLI', path: 'docs/en/cli.md' },
+      { id: 'unity', title: 'Unity Integration', path: 'docs/en/unity-integration.md' },
+      { id: 'vscode', title: 'VS Code Extension', path: 'docs/en/vscode-extension.md' },
+      { id: 'config', title: 'Project Configuration', path: 'docs/en/project-configuration-and-interop.md' },
     ]
   },
   {
     id: 'advanced',
     title: 'Advanced',
     items: [
-      { id: 'architecture', title: 'Architecture', path: '/docs/en/architecture.md' },
-      { id: 'internals', title: 'Internals', path: '/docs/en/internals.md' },
-      { id: 'mini-spec', title: 'Mini Spec', path: '/docs/en/mini-spec.md' },
-      { id: 'future', title: 'Future Direction', path: '/docs/en/future-direction.md' },
+      { id: 'architecture', title: 'Architecture', path: 'docs/en/architecture.md' },
+      { id: 'internals', title: 'Internals', path: 'docs/en/internals.md' },
+      { id: 'mini-spec', title: 'Mini Spec', path: 'docs/en/mini-spec.md' },
+      { id: 'future', title: 'Future Direction', path: 'docs/en/future-direction.md' },
     ]
   }
 ]
@@ -72,52 +72,52 @@ const DOC_GROUPS_KO: DocGroup[] = [
     id: 'get-started',
     title: '시작하기',
     items: [
-      { id: 'index', title: '소개', path: '/docs/ko/index.md' },
-      { id: 'overview', title: '개요', path: '/docs/ko/overview.md' },
-      { id: 'getting-started', title: '빠른 시작', path: '/docs/ko/getting-started.md' },
+      { id: 'index', title: '소개', path: 'docs/ko/index.md' },
+      { id: 'overview', title: '개요', path: 'docs/ko/overview.md' },
+      { id: 'getting-started', title: '빠른 시작', path: 'docs/ko/getting-started.md' },
     ]
   },
   {
     id: 'language',
     title: '언어 가이드',
     items: [
-      { id: 'syntax', title: '문법', path: '/docs/ko/syntax.md' },
-      { id: 'types', title: '타입', path: '/docs/ko/types.md' },
-      { id: 'functions', title: '함수', path: '/docs/ko/functions.md' },
-      { id: 'operators', title: '연산자', path: '/docs/ko/operators.md' },
-      { id: 'control-flow', title: '제어 흐름', path: '/docs/ko/pattern-matching-and-control-flow.md' },
-      { id: 'coroutines', title: '코루틴', path: '/docs/ko/coroutines.md' },
-      { id: 'strings', title: '문자열 및 컬렉션', path: '/docs/ko/strings-and-collections.md' },
+      { id: 'syntax', title: '문법', path: 'docs/ko/syntax.md' },
+      { id: 'types', title: '타입', path: 'docs/ko/types.md' },
+      { id: 'functions', title: '함수', path: 'docs/ko/functions.md' },
+      { id: 'operators', title: '연산자', path: 'docs/ko/operators.md' },
+      { id: 'control-flow', title: '제어 흐름', path: 'docs/ko/pattern-matching-and-control-flow.md' },
+      { id: 'coroutines', title: '코루틴', path: 'docs/ko/coroutines.md' },
+      { id: 'strings', title: '문자열 및 컬렉션', path: 'docs/ko/strings-and-collections.md' },
     ]
   },
   {
     id: 'core',
     title: '핵심 개념',
     items: [
-      { id: 'data-models', title: '데이터 모델', path: '/docs/ko/data-models.md' },
-      { id: 'lifecycle', title: '라이프사이클', path: '/docs/ko/lifecycle.md' },
-      { id: 'events', title: '이벤트 및 본질 기능', path: '/docs/ko/events-and-intrinsic.md' },
-      { id: 'declarations', title: '선언 및 필드', path: '/docs/ko/declarations-and-fields.md' },
+      { id: 'data-models', title: '데이터 모델', path: 'docs/ko/data-models.md' },
+      { id: 'lifecycle', title: '라이프사이클', path: 'docs/ko/lifecycle.md' },
+      { id: 'events', title: '이벤트 및 본질 기능', path: 'docs/ko/events-and-intrinsic.md' },
+      { id: 'declarations', title: '선언 및 필드', path: 'docs/ko/declarations-and-fields.md' },
     ]
   },
   {
     id: 'tooling',
     title: '도구 및 통합',
     items: [
-      { id: 'cli', title: 'CLI', path: '/docs/ko/cli.md' },
-      { id: 'unity', title: 'Unity 통합', path: '/docs/ko/unity-integration.md' },
-      { id: 'vscode', title: 'VS Code 확장', path: '/docs/ko/vscode-extension.md' },
-      { id: 'config', title: '프로젝트 구성', path: '/docs/ko/project-configuration-and-interop.md' },
+      { id: 'cli', title: 'CLI', path: 'docs/ko/cli.md' },
+      { id: 'unity', title: 'Unity 통합', path: 'docs/ko/unity-integration.md' },
+      { id: 'vscode', title: 'VS Code 확장', path: 'docs/ko/vscode-extension.md' },
+      { id: 'config', title: '프로젝트 구성', path: 'docs/ko/project-configuration-and-interop.md' },
     ]
   },
   {
     id: 'advanced',
     title: '고급',
     items: [
-      { id: 'architecture', title: '아키텍처', path: '/docs/ko/architecture.md' },
-      { id: 'internals', title: '내부 구조', path: '/docs/ko/internals.md' },
-      { id: 'mini-spec', title: '상세 명세', path: '/docs/ko/mini-spec.md' },
-      { id: 'future', title: '향후 방향', path: '/docs/ko/future-direction.md' },
+      { id: 'architecture', title: '아키텍처', path: 'docs/ko/architecture.md' },
+      { id: 'internals', title: '내부 구조', path: 'docs/ko/internals.md' },
+      { id: 'mini-spec', title: '상세 명세', path: 'docs/ko/mini-spec.md' },
+      { id: 'future', title: '향후 방향', path: 'docs/ko/future-direction.md' },
     ]
   }
 ]
@@ -138,6 +138,7 @@ const highlightCode = (code: string, lang: string) => {
 
   const highlightPrsm = (c: string) => {
     let h = c;
+    const knownTypesStr = "\\b(Int|Float|Double|Bool|String|Long|Byte|Unit|Vector2|Vector3|Vector4|Quaternion|Matrix4x4|Color|Color32|Rect|Bounds|Ray|RaycastHit|LayerMask|MonoBehaviour|ScriptableObject|GameObject|Transform|Component|Rigidbody|Rigidbody2D|Collider|Collider2D|BoxCollider|SphereCollider|CapsuleCollider|MeshCollider|CharacterController|Collision|Collision2D|Camera|Light|Renderer|MeshRenderer|SkinnedMeshRenderer|SpriteRenderer|MeshFilter|Material|Shader|Texture|Texture2D|Sprite|RenderTexture|Animator|Animation|AnimationClip|AudioSource|AudioClip|AudioListener|Canvas|CanvasGroup|RectTransform|Image|Text|Button|Slider|Toggle|InputField|Dropdown|ScrollRect|TextMeshPro|TextMeshProUGUI|TMP_Text|ParticleSystem|TrailRenderer|LineRenderer|NavMeshAgent|Terrain|Tilemap|Input|Time|Debug|Mathf|Physics|Physics2D|Application|SceneManager|Resources|PlayerPrefs|Screen|Cursor|Gizmos|UnityEvent|UnityAction|NativeArray|List|Dictionary|HashSet|Queue|Stack|Array)\\b";
 
     // 1. Comments & Strings
     h = h.replace(/(\/\/.*$)/gm, '<span class="prsm-comment">$1</span>');
@@ -147,7 +148,7 @@ const highlightCode = (code: string, lang: string) => {
        return `<span class="prsm-string">${match}</span>`;
     });
 
-    // 2. Headings & Declarations
+    // 2. Headings & Declarations (Specific context coloring)
     h = h.replace(/\b(using)\s+([a-zA-Z0-9_.]+)/g, (match, p1, p2, offset) => {
       if (isInsideSpan(h, offset)) return match;
       return `<span class="prsm-keyword">${p1}</span> <span class="prsm-default">${p2}</span>`;
@@ -163,30 +164,25 @@ const highlightCode = (code: string, lang: string) => {
       return `<span class="prsm-keyword">${p1}</span> <span class="prsm-default">${p2}</span>`;
     });
 
-    // 3. Member Access (Complex Dot Rule)
-    // Type.Member (Pascal.Pascal -> Teal.Purple)
-    h = h.replace(/\b([A-Z][a-zA-Z0-9_]*)\.([A-Z][a-zA-Z0-9_]*)\b/g, (match, p1, p2, offset) => {
+    // 3. Member Access (The dot rule - distinguished by Known Types)
+    // For static access like EnemyState.Idle, EnemyState should be white if not a known type.
+    h = h.replace(/\b([A-Z][a-zA-Z0-9_]*)\.([a-zA-Z0-9_]+)\b/g, (match, p1, p2, offset) => {
       if (isInsideSpan(h, offset)) return match;
-      return `<span class="prsm-type">${p1}</span>.<span class="prsm-property">${p2}</span>`;
-    });
-
-    // .Member (Camel or Pascal)
-    h = h.replace(/\.([a-zA-Z0-9_]+)\b/g, (match, p1, offset) => {
-      if (isInsideSpan(h, offset)) return match;
-      // If followed by (, it's a function (Blue), otherwise it's a property (Pink)
+      
+      const isKnown = new RegExp(knownTypesStr).test(p1);
+      const typeSpan = isKnown ? `<span class="prsm-type">${p1}</span>` : p1;
+      
       const after = h.substring(offset + match.length).trim();
       const isFn = after.startsWith('(');
-      // Exception: static members in PascalCase are already handled or should be Purple
-      const isPascal = /^[A-Z]/.test(p1);
-      const cls = isFn ? 'prsm-function' : (isPascal ? 'prsm-property' : 'prsm-property');
       
-      // Special case for deltaTime which is Blue in screenshot
-      if (p1 === 'deltaTime') return `.<span class="prsm-function">${p1}</span>`;
-      
-      return `.<span class="${cls}">${p1}</span>`;
+      // Known blue properties/statics
+      const isBlue = isFn || p1 === 'Time' || p1 === 'Vector3' || p1 === 'Mathf';
+      const cls = isBlue ? 'prsm-function' : 'prsm-property';
+
+      return `${typeSpan}.<span class="${cls}">${p2}</span>`;
     });
 
-    // 4. Type Annotations & Generics
+    // 4. Type Annotations & Generics (Always Teal)
     h = h.replace(/:\s*([A-Z][a-zA-Z0-9_]*)/g, (match, _, offset) => {
       if (isInsideSpan(h, offset)) return match;
       const name = match.split(':')[1].trim();
@@ -198,7 +194,7 @@ const highlightCode = (code: string, lang: string) => {
       return `&lt;<span class="prsm-type">${p1}</span>&gt;`;
     });
 
-    // 5. Keywords & Built-ins
+    // 5. Base Keywords & Constants
     const keywords = /\b(serialize|require|optional|child|parent|public|private|protected|val|var|func|coroutine|override|return|intrinsic|if|else|when|for|while|in|until|downTo|step|break|continue|is|wait|start|stop|stopAll|listen|awake|update|fixedUpdate|lateUpdate|onEnable|onDisable|onDestroy|onTriggerEnter|onTriggerExit|onTriggerStay|onCollisionEnter|onCollisionExit|onCollisionStay)\b/g;
     h = h.replace(keywords, (match, _, offset) => {
       if (isInsideSpan(h, offset)) return match;
@@ -211,28 +207,32 @@ const highlightCode = (code: string, lang: string) => {
       return `<span class="prsm-builtin">${match}</span>`;
     });
 
-    // Special Blue variables
     h = h.replace(/\b(this|transform|gameObject)\b/g, (match, _, offset) => {
       if (isInsideSpan(h, offset)) return match;
       return `<span class="prsm-function">${match}</span>`;
     });
 
-    // Special operator => (Orange)
     h = h.replace(/(=&gt;|=>)/g, (match, _, offset) => {
       if (isInsideSpan(h, offset)) return match;
       return `<span class="prsm-operator-keyword">${match}</span>`;
     });
 
-    // 6. Generic PascalCase fallback
+    // 6. Generic PascalCase fallback (Default to White/Foreground)
     h = h.replace(/\b([A-Z][a-zA-Z0-9_]*)\b/g, (match, _, offset) => {
       if (isInsideSpan(h, offset)) return match;
-      return `<span class="prsm-type">${match}</span>`;
+      // Default PascalCase is white (Matches Islands Dark's DEFAULT_CLASS_REFERENCE)
+      return `<span class="prsm-default">${match}</span>`;
     });
 
-    // 7. Functions (camelCase)
+    // 7. Functions & Properties
     h = h.replace(/\b([a-z][a-zA-Z0-9_]*)(?=\s*\()/g, (match, _, offset) => {
       if (isInsideSpan(h, offset)) return match;
       return `<span class="prsm-function">${match}</span>`;
+    });
+
+    h = h.replace(/\.([a-z][a-zA-Z0-9_]*)\b/g, (match, p1, offset) => {
+      if (isInsideSpan(h, offset)) return match;
+      return `.<span class="prsm-property">${p1}</span>`;
     });
 
     // 8. Numbers & Annotations
@@ -259,8 +259,6 @@ const highlightCode = (code: string, lang: string) => {
 
   return code;
 };
-
-
 
 
 const CodeBlock = ({ children, className }: { children: string; className?: string }) => {
@@ -479,7 +477,7 @@ export default function DocumentationView({ initialDocId = 'index', lang }: Docu
     const fetchDoc = async () => {
       setLoading(true)
       try {
-        const response = await fetch(activeDoc.path)
+        const response = await fetch(import.meta.env.BASE_URL + activeDoc.path)
         if (!response.ok) throw new Error('Failed to load document')
         const text = await response.text()
         const cleanedText = text.replace(/^---[\s\S]+?---(\r?\n)+/, '')

@@ -11,7 +11,7 @@ import {
     runPrSMIndexForPosition,
     runPrSMReferencesForPosition,
 } from './prism-cli';
-import { getNavigationFallbackTarget, getNavigationHoverText, getNavigationTypeHoverText } from './navigation-helpers';
+import { getNavigationFallbackTarget, getNavigationHoverText } from './navigation-helpers';
 import { getPrSMRenamePlan, getPrSMRenameSupportError, validatePrSMRenameName } from './navigation-rename';
 
 export class PrismNavigationProvider implements vscode.DefinitionProvider, vscode.HoverProvider, vscode.ReferenceProvider, vscode.RenameProvider {
@@ -227,39 +227,4 @@ function sourceLocationToRange(location: PrismSourceLocation | PrismIndexedRefer
 
 function locationKey(location: PrismSourceLocation): string {
     return [location.file, location.line, location.col, location.end_line ?? location.line, location.end_col ?? location.col].join(':');
-}
-
-export class PrismTypeHoverProvider implements vscode.HoverProvider {
-    private readonly csharp = new CSharpBridge();
-
-    async provideHover(
-        document: vscode.TextDocument,
-        position: vscode.Position,
-        token: vscode.CancellationToken,
-    ): Promise<vscode.Hover | undefined> {
-        if (!vscode.workspace.isTrusted || document.uri.scheme !== 'file') {
-            return undefined;
-        }
-
-        const line = position.line + 1;
-        const col = position.character + 1;
-        const indexResult = await runPrSMIndexForPosition(document.uri.fsPath, line, col);
-        if (token.isCancellationRequested || !indexResult?.reference_at || indexResult.reference_at.kind !== 'type') {
-            return undefined;
-        }
-
-        const csharpTarget = getNavigationCSharpTarget(indexResult);
-        const csharpInfo = csharpTarget ? await this.csharp.getHoverDetails(csharpTarget, document.uri.fsPath) : null;
-        if (token.isCancellationRequested) {
-            return undefined;
-        }
-
-        const hoverText = getNavigationTypeHoverText(indexResult, csharpInfo);
-        if (!hoverText) {
-            return undefined;
-        }
-
-        const markdown = new vscode.MarkdownString(hoverText);
-        return new vscode.Hover(markdown, indexResultToRange(indexResult));
-    }
 }

@@ -50,12 +50,14 @@ function App() {
     }
   }, [])
 
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '') // e.g. '/moon-lang' or ''
+
   const enterDocs = (docId = 'index', newLang = lang) => {
     setLang(newLang)
     setActiveDoc(docId)
     setView('docs')
     // Construct absolute path from root to prevent stacking (e.g. /en/en/)
-    const path = `/${newLang}/${docId === 'index' ? '' : docId + '.html'}`.replace(/\/+/g, '/')
+    const path = `${base}/${newLang}/${docId === 'index' ? '' : docId + '.html'}`.replace(/\/+/g, '/') || '/'
     window.history.pushState({}, '', path)
   }
 
@@ -87,7 +89,7 @@ function App() {
 
       <header className="brand-nav">
         <div className="brand-nav__left">
-          <a className="brand-mark" href="./" onClick={(e) => { e.preventDefault(); setView('landing'); window.history.pushState({}, '', '/') }}>
+          <a className="brand-mark" href={import.meta.env.BASE_URL} onClick={(e) => { e.preventDefault(); setView('landing'); window.history.pushState({}, '', import.meta.env.BASE_URL) }}>
             <img src={prsmLogo} alt="PrSM logo" className="brand-mark__logo" />
             <span>PrSM</span>
           </a>
@@ -95,14 +97,14 @@ function App() {
           <nav className="brand-nav__links" aria-label="Primary">
             <a 
               className={`brand-nav__link ${view === 'landing' ? 'brand-nav__link--active' : ''}`} 
-              href="./"
-              onClick={(e) => { e.preventDefault(); setView('landing'); window.history.pushState({}, '', '/') }}
+              href={import.meta.env.BASE_URL}
+              onClick={(e) => { e.preventDefault(); setView('landing'); window.history.pushState({}, '', import.meta.env.BASE_URL) }}
             >
               {t.home}
             </a>
             <a 
               className={`brand-nav__link ${view === 'docs' ? 'brand-nav__link--active' : ''}`} 
-              href={`./${lang}/`}
+              href={`${base}/${lang}/`.replace(/\/+/g, '/')}
               onClick={(e) => { e.preventDefault(); enterDocs('index', lang) }}
             >
               {t.docs}
@@ -161,7 +163,7 @@ function App() {
         <div className="brand-actions">
           <a 
             className="brand-button brand-button--primary" 
-            href={`./${lang}/getting-started.html`}
+            href={`${base}/${lang}/getting-started.html`.replace(/\/+/g, '/')}
             onClick={(e) => { e.preventDefault(); enterDocs('getting-started', lang) }}
           >
             <BookOpen size={18} strokeWidth={2} />

@@ -39,3 +39,5 @@ npm install
 npm test
 npm run package
 ```
+
+`npm run package` now writes a VSIX under `artifacts/` and verifies that the packaged `dist/extension.js` and `bin/prism.exe` exactly match the current workspace build outputs.

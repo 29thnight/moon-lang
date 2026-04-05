@@ -373,7 +373,6 @@ impl PrismLspServer {
             resolved_symbol,
             definition,
             &project_index,
-            &query_context,
             self.sidecar_hover_section(
                 &position.file_path,
                 symbol_at,
@@ -766,7 +765,7 @@ impl PrismLspServer {
                 context,
             },
         )?;
-        Some(format_sidecar_hover_section("C# Symbol", &hover))
+        Some(format_sidecar_hover_section("Generated C#", &hover))
     }
 
     fn sidecar_generated_hover_section_for_definition(
@@ -785,7 +784,7 @@ impl PrismLspServer {
                 context,
             },
         )?;
-        Some(format_sidecar_hover_section("C# Symbol", &hover))
+        Some(format_sidecar_hover_section("Generated C#", &hover))
     }
 
     fn sidecar_unity_hover_section_for_definition(
@@ -1278,124 +1277,67 @@ fn build_hover_markdown(
     resolved_symbol: Option<&IndexedSymbol>,
     definition: Option<&HirDefinition>,
     project_index: &ProjectIndex,
-    query_context: &QueryContext,
     sidecar_hover_section: Option<String>,
 ) -> Option<String> {
     if let Some(symbol) = symbol_at {
-        let mut details = vec!["**Status:** Defined".to_string()];
-        details.push(format!(
-            "**Definition:** {}",
-            format_location(&query_context.original_path(&symbol.file_path), symbol.span)
-        ));
-        if let Some(definition) = definition {
-            details.push(format!("**Type:** {}", definition.ty.display_name()));
-            if shows_mutability(definition.kind) {
-                details.push(format!(
-                    "**Mutable:** {}",
-                    if definition.mutable { "yes" } else { "no" }
-                ));
-            }
-        }
-        details.extend(symbol_hover_metadata(symbol, project_index));
-
-        let mut sections = vec![
-            format!("**{}** {}", symbol.kind.as_str(), symbol.qualified_name),
-            details.join("  \n"),
-            "```prsm".to_string(),
-            symbol.signature.clone(),
-            "```".to_string(),
-        ];
-        if let Some(section) = generated_csharp_hover_section_for_symbol(symbol, query_context) {
-            sections.push(section);
-        }
-        if let Some(section) = sidecar_hover_section
-            .clone()
-            .or_else(|| unity_hover_section_for_symbol(symbol, definition, project_index))
-        {
-            sections.push(section);
-        }
-
-        return Some(sections.join("\n\n"));
+        return Some(join_hover_sections([
+            Some(format_prsm_hover_signature(&symbol.signature)),
+            sidecar_hover_section
+                .clone()
+                .or_else(|| unity_hover_section_for_symbol(symbol, definition, project_index)),
+        ]));
     }
 
     if let (Some(reference), Some(symbol)) = (reference_at, resolved_symbol) {
-        let mut details = vec![
-            "**Status:** Resolved".to_string(),
-            format!("**Target:** {} {}", symbol.kind.as_str(), symbol.qualified_name),
-            format!(
-                "**Definition:** {}",
-                format_location(&query_context.original_path(&symbol.file_path), symbol.span)
-            ),
-        ];
-        if let Some(definition) = definition {
-            details.push(format!("**Type:** {}", definition.ty.display_name()));
-        }
-        details.extend(symbol_hover_metadata(symbol, project_index));
-
-        let mut sections = vec![
-            format!("**{} reference** {}", reference.kind.as_str(), reference.name),
-            details.join("  \n"),
-            "```prsm".to_string(),
-            symbol.signature.clone(),
-            "```".to_string(),
-        ];
-        if let Some(section) = generated_csharp_hover_section_for_symbol(symbol, query_context) {
-            sections.push(section);
-        }
-        if let Some(section) = sidecar_hover_section
-            .clone()
-            .or_else(|| unity_hover_section_for_symbol(symbol, definition, project_index))
-            .or_else(|| unity_hover_section_for_reference(reference))
-        {
-            sections.push(section);
-        }
-
-        return Some(sections.join("\n\n"));
+        return Some(join_hover_sections([
+            Some(format_prsm_hover_signature(&symbol.signature)),
+            sidecar_hover_section
+                .clone()
+                .or_else(|| unity_hover_section_for_symbol(symbol, definition, project_index))
+                .or_else(|| unity_hover_section_for_reference(reference)),
+        ]));
     }
 
     if let Some(definition) = definition {
-        let mut details = vec![
-            "**Status:** Resolved".to_string(),
-            format!(
-                "**Definition:** {}",
-                format_location(&query_context.original_path(&definition.file_path), definition.span)
-            ),
-            format!("**Type:** {}", definition.ty.display_name()),
-        ];
-        if shows_mutability(definition.kind) {
-            details.push(format!(
-                "**Mutable:** {}",
-                if definition.mutable { "yes" } else { "no" }
-            ));
-        }
-
-        let mut sections = vec![
-            format!("**{}** {}", definition.kind.as_str(), definition.qualified_name),
-            details.join("  \n"),
-        ];
-        if let Some(section) = generated_csharp_hover_section_for_definition(definition, query_context) {
-            sections.push(section);
-        }
-        if let Some(section) = sidecar_hover_section
-            .clone()
-            .or_else(|| unity_hover_section_for_definition(definition))
-        {
-            sections.push(section);
-        }
-
-        return Some(sections.join("\n\n"));
+        return Some(join_hover_sections([
+            Some(format_prsm_hover_signature(&hover_signature_for_definition(definition))),
+            sidecar_hover_section
+                .clone()
+                .or_else(|| unity_hover_section_for_definition(definition)),
+        ]));
     }
 
     reference_at.map(|reference| {
-        let mut sections = vec![
-            format!("**{} reference** {}", reference.kind.as_str(), reference.name),
-            "**Status:** Unresolved  \n**Definition:** Not found in the current PrSM project index.".to_string(),
-        ];
-        if let Some(section) = sidecar_hover_section.or_else(|| unity_hover_section_for_reference(reference)) {
-            sections.push(section);
-        }
-        sections.join("\n\n")
+        let supplemental = sidecar_hover_section.or_else(|| unity_hover_section_for_reference(reference));
+        let unresolved_message = if supplemental.is_some() {
+            None
+        } else {
+            Some("_Definition not found in the current PrSM project index._".to_string())
+        };
+
+        join_hover_sections([
+            Some(format_prsm_hover_signature(&reference.name)),
+            supplemental,
+            unresolved_message,
+        ])
     })
+}
+
+fn join_hover_sections(sections: impl IntoIterator<Item = Option<String>>) -> String {
+    sections
+        .into_iter()
+        .flatten()
+        .filter(|section| !section.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+fn format_prsm_hover_signature(signature: &str) -> String {
+    format!("```prsm\n{}\n```", signature.trim())
+}
+
+fn hover_signature_for_definition(definition: &HirDefinition) -> String {
+    format!("{} {}", definition.kind.as_str(), definition.qualified_name)
 }
 
 fn merge_completion_items(primary: Vec<Value>, fallback: Vec<Value>) -> Vec<Value> {
@@ -1533,67 +1475,21 @@ fn should_query_sidecar_for_type(type_name: &str, project_index: &ProjectIndex) 
 }
 
 fn format_sidecar_hover_section(title: &str, hover: &UnityHoverResult) -> String {
-    let mut details = vec![format!("**Symbol:** {}", hover.display_name)];
-    if let Some(namespace) = hover.namespace.as_ref() {
-        details.push(format!("**Namespace:** {}", namespace));
-    }
-    if let Some(assembly) = hover.assembly.as_ref() {
-        details.push(format!("**Assembly:** {}", assembly));
-    }
-    if let Some(docs_url) = hover.docs_url.as_ref() {
-        details.push(format!("**Docs:** [{}]({})", hover.display_name, docs_url));
-    }
-
-    let mut sections = vec![format!("**{}**", title), details.join("  \n")];
-    if let Some(signature) = hover.signature.as_ref() {
+    let mut sections = vec![format!("**[{}]**", title)];
+    if let Some(signature) = hover.signature.as_ref().map(|value| value.trim()).filter(|value| !value.is_empty()) {
         sections.push(format!("```csharp\n{}\n```", signature));
     }
-    if let Some(documentation) = hover.documentation.as_ref() {
-        sections.push(documentation.clone());
+    if let Some(documentation) = hover.documentation.as_ref().map(|value| value.trim()).filter(|value| !value.is_empty()) {
+        sections.push(documentation.to_string());
+    }
+    if let Some(docs_url) = hover.docs_url.as_ref() {
+        sections.push(format!("[Docs]({})", docs_url));
+    }
+    if sections.len() == 1 {
+        sections.push(hover.display_name.clone());
     }
 
     sections.join("\n\n")
-}
-
-fn generated_csharp_hover_section_for_symbol(
-    symbol: &IndexedSymbol,
-    query_context: &QueryContext,
-) -> Option<String> {
-    generated_csharp_hover_section(csharp_lookup_target_from_symbol(symbol)?, query_context)
-}
-
-fn generated_csharp_hover_section_for_definition(
-    definition: &HirDefinition,
-    query_context: &QueryContext,
-) -> Option<String> {
-    generated_csharp_hover_section(csharp_lookup_target_from_definition(definition)?, query_context)
-}
-
-fn generated_csharp_hover_section(
-    target: CSharpLookupTarget,
-    query_context: &QueryContext,
-) -> Option<String> {
-    let generated_path = expected_generated_csharp_path(&target.file_path, query_context)?;
-    let file_label = if generated_path.exists() {
-        "**File:**"
-    } else {
-        "**Expected File:**"
-    };
-
-    Some(
-        [
-            "**Generated C#**".to_string(),
-            [
-                format!(
-                    "**Lookup:** {}",
-                    format_csharp_lookup(&target.type_name, target.member_name.as_deref())
-                ),
-                format!("{} {}", file_label, format_path(&generated_path)),
-            ]
-            .join("  \n"),
-        ]
-        .join("\n\n"),
-    )
 }
 
 fn expected_generated_csharp_path(source_file_path: &Path, query_context: &QueryContext) -> Option<PathBuf> {
@@ -1712,12 +1608,6 @@ fn capitalize_ascii(value: &str) -> String {
     format!("{}{}", first.to_ascii_uppercase(), chars.as_str())
 }
 
-fn format_csharp_lookup(type_name: &str, member_name: Option<&str>) -> String {
-    member_name
-        .map(|member_name| format!("{}.{}", type_name, member_name))
-        .unwrap_or_else(|| type_name.to_string())
-}
-
 fn unity_hover_section_for_symbol(
     symbol: &IndexedSymbol,
     definition: Option<&HirDefinition>,
@@ -1760,9 +1650,12 @@ fn format_unity_hover_section(label: &str, type_name: &str) -> Option<String> {
 
     Some(
         [
-            "**Unity API**".to_string(),
-            format!("**{}:** {}", label, lookup_name),
-            format!("**Docs:** [{}]({})", display_name, docs_url),
+            "**[Unity API]**".to_string(),
+            match label {
+                "Type" => lookup_name,
+                _ => format!("{} ({})", lookup_name, label),
+            },
+            format!("[Docs]({})", docs_url),
         ]
         .join("\n\n"),
     )
@@ -1780,10 +1673,6 @@ fn display_type_name(type_name: &str) -> String {
         .unwrap_or(without_namespace)
         .trim()
         .to_string()
-}
-
-fn format_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
 }
 
 fn compare_symbols(left: &IndexedSymbol, right: &IndexedSymbol) -> std::cmp::Ordering {
@@ -1881,31 +1770,6 @@ fn workspace_symbol_container_name(symbol: &IndexedSymbol, file_path: &Path) -> 
             .file_name()
             .map(|name| name.to_string_lossy().to_string())
     })
-}
-
-fn symbol_hover_metadata(symbol: &IndexedSymbol, project_index: &ProjectIndex) -> Vec<String> {
-    let Some((declaration, member)) = find_symbol_summary(project_index, symbol) else {
-        return Vec::new();
-    };
-
-    let mut details = Vec::new();
-    if let Some(container_name) = &symbol.container_name {
-        details.push(format!("**Container:** {}", container_name));
-    }
-
-    if member.is_none() {
-        if let Some(base_type) = declaration.base_type.as_ref() {
-            details.push(format!("**Base:** {}", base_type));
-        }
-        if !declaration.interfaces.is_empty() {
-            details.push(format!("**Implements:** {}", declaration.interfaces.join(", ")));
-        }
-        if !declaration.members.is_empty() {
-            details.push(format!("**Members:** {}", declaration.members.len()));
-        }
-    }
-
-    details
 }
 
 fn find_symbol_summary<'a>(
@@ -2110,10 +1974,6 @@ fn is_reserved_keyword(value: &str) -> bool {
     RESERVED_KEYWORDS.contains(&value.to_ascii_lowercase().as_str())
 }
 
-fn shows_mutability(kind: HirDefinitionKind) -> bool {
-    matches!(kind, HirDefinitionKind::Field | HirDefinitionKind::Local)
-}
-
 fn overlay_path_for(overlay_root: &Path, original_path: &Path) -> PathBuf {
     let mut hasher = DefaultHasher::new();
     original_path.hash(&mut hasher);
@@ -2222,8 +2082,8 @@ fn clamp_index(value: usize, max: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{merge_completion_items, parse_sidecar_args, prsm_label_for_sidecar_item};
-    use crate::roslyn_sidecar_protocol::{SidecarCompletionItemKind, UnityCompletionItem};
+    use super::{format_sidecar_hover_section, merge_completion_items, parse_sidecar_args, prsm_label_for_sidecar_item};
+    use crate::roslyn_sidecar_protocol::{SidecarCompletionItemKind, SidecarSymbolKind, SidecarSymbolSource, UnityCompletionItem, UnityHoverResult};
     use serde_json::json;
 
     #[test]
@@ -2264,6 +2124,31 @@ mod tests {
 
         assert_eq!(label, "setActive");
     }
+
+    #[test]
+    fn lsp_sidecar_hover_sections_use_compact_layout() {
+        let markdown = format_sidecar_hover_section(
+            "Generated C#",
+            &UnityHoverResult {
+                display_name: "Player".to_string(),
+                kind: SidecarSymbolKind::Class,
+                source: SidecarSymbolSource::Generated,
+                namespace: Some("Game".to_string()),
+                signature: Some("public class Player : MonoBehaviour".to_string()),
+                documentation: Some("Unity script".to_string()),
+                assembly: Some("Game.Assembly".to_string()),
+                docs_url: Some("https://example.com/player".to_string()),
+                is_static: false,
+            },
+        );
+
+        assert!(markdown.contains("**[Generated C#]**"));
+        assert!(markdown.contains("public class Player : MonoBehaviour"));
+        assert!(markdown.contains("Unity script"));
+        assert!(markdown.contains("[Docs](https://example.com/player)"));
+        assert!(!markdown.contains("**Symbol:**"));
+        assert!(!markdown.contains("**Assembly:**"));
+    }
 }
 
 fn compare_positions(
@@ -2291,15 +2176,6 @@ fn symbol_kind_number(kind: &str) -> u32 {
         "field" | "serialize-field" | "required-component" | "optional-component" | "child-component" | "parent-component" => 8,
         _ => 13,
     }
-}
-
-fn format_location(path: &Path, span: crate::lexer::token::Span) -> String {
-    format!(
-        "{}:{}:{}",
-        path.to_string_lossy().replace('\\', "/"),
-        span.start.line,
-        span.start.col,
-    )
 }
 
 fn location_key(path: &Path, span: crate::lexer::token::Span) -> String {

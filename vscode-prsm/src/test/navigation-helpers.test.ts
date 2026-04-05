@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getNavigationCSharpTarget } from '../csharp-navigation';
-import { getNavigationFallbackTarget, getNavigationHoverText, getNavigationTypeHoverText } from '../navigation-helpers';
+import { getNavigationCSharpHoverSection, getNavigationFallbackTarget, getNavigationHoverText } from '../navigation-helpers';
 
 test('getNavigationHoverText formats symbol hover content', () => {
     const text = getNavigationHoverText({
@@ -29,17 +29,17 @@ test('getNavigationHoverText formats symbol hover content', () => {
         typeName: 'Player',
         memberName: 'jump',
         generatedFile: 'build-output/Player.cs',
-        hoverText: '```csharp\npublic void jump()\n```',
+        hoverText: 'Unity member\n\n```csharp\npublic void jump()\n```',
     });
 
-    assert.match(text ?? '', /Player\.jump/);
     assert.match(text ?? '', /public func jump\(\): Unit/);
-    assert.match(text ?? '', /Status:\*\* Defined/);
-    assert.match(text ?? '', /Type:\*\* Unit/);
-    assert.match(text ?? '', /Assets\/Player\.prsm:2:10/);
-    assert.match(text ?? '', /Generated C#/);
-    assert.match(text ?? '', /build-output\/Player\.cs/);
+    assert.match(text ?? '', /\[Generated C#\]/);
     assert.match(text ?? '', /public void jump\(\)/);
+    assert.match(text ?? '', /Unity member/);
+    assert.doesNotMatch(text ?? '', /Status:/);
+    assert.doesNotMatch(text ?? '', /Definition:/);
+    assert.doesNotMatch(text ?? '', /Lookup:/);
+    assert.doesNotMatch(text ?? '', /File:/);
 });
 
 test('getNavigationHoverText formats resolved reference hover content', () => {
@@ -73,17 +73,17 @@ test('getNavigationHoverText formats resolved reference hover content', () => {
     }, {
         typeName: 'WeaponData',
         generatedFile: 'build-output/WeaponData.cs',
-        hoverText: '```csharp\npublic class WeaponData : ScriptableObject\n```',
+        hoverText: 'Unity script\n\n```csharp\npublic class WeaponData : ScriptableObject\n```',
     });
 
-    assert.match(text ?? '', /type reference/i);
-    assert.match(text ?? '', /Status:\*\* Resolved/);
-    assert.match(text ?? '', /WeaponData/);
     assert.match(text ?? '', /data class WeaponData\(damage: Int\)/);
-    assert.match(text ?? '', /Type:\*\* WeaponData/);
-    assert.match(text ?? '', /Assets\/WeaponData\.prsm:1:12/);
-    assert.match(text ?? '', /build-output\/WeaponData\.cs/);
+    assert.match(text ?? '', /\[Generated C#\]/);
     assert.match(text ?? '', /public class WeaponData : ScriptableObject/);
+    assert.match(text ?? '', /Unity script/);
+    assert.doesNotMatch(text ?? '', /Status:/);
+    assert.doesNotMatch(text ?? '', /Definition:/);
+    assert.doesNotMatch(text ?? '', /Lookup:/);
+    assert.doesNotMatch(text ?? '', /File:/);
 });
 
 test('getNavigationHoverText formats unresolved reference hover content', () => {
@@ -100,27 +100,18 @@ test('getNavigationHoverText formats unresolved reference hover content', () => 
         hoverText: '```csharp\npublic class MonoBehaviour : Behaviour\n```',
     });
 
-    assert.match(text ?? '', /Status:\*\* Unresolved/);
-    assert.match(text ?? '', /Not found in the current PrSM project index/);
+    assert.match(text ?? '', /```prsm\nMonoBehaviour\n```/);
     assert.match(text ?? '', /MonoBehaviour : Behaviour/);
+    assert.doesNotMatch(text ?? '', /Status:/);
 });
 
-test('getNavigationTypeHoverText formats supplemental type hover content', () => {
-    const text = getNavigationTypeHoverText({
-        reference_at: {
-            name: 'MonoBehaviour',
-            kind: 'type',
-            file: 'Assets/Player.prsm',
-            line: 1,
-            col: 20,
-        },
-    }, {
+test('getNavigationCSharpHoverSection formats supplemental C# hover content', () => {
+    const text = getNavigationCSharpHoverSection({
         typeName: 'MonoBehaviour',
         hoverText: '```csharp\npublic class MonoBehaviour : Behaviour\n```',
     });
 
-    assert.match(text ?? '', /type reference/i);
-    assert.match(text ?? '', /Generated C#/);
+    assert.match(text ?? '', /\[Generated C#\]/);
     assert.match(text ?? '', /MonoBehaviour : Behaviour/);
 });
 

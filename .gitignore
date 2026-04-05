@@ -23,6 +23,8 @@ docs-landing/.vite/
 docs-landing/dist/
 docs-landing/*.tsbuildinfo
 docs-landing/node_modules/.tmp/
+# Junction to docs/ for local dev — not tracked in git
+docs-landing/public/docs/
 
 # GitHub Pages / Jekyll local build artifacts
 .jekyll-cache/

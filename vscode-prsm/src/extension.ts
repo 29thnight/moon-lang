@@ -14,7 +14,7 @@ import {
 } from './generated-source-map';
 import { insertLifecycleBlock } from './lifecycle-inserter';
 import { startPrismLanguageClient, stopPrismLanguageClient } from './lsp-client';
-import { PrismNavigationProvider, PrismTypeHoverProvider } from './navigation';
+import { PrismNavigationProvider } from './navigation';
 import { PrismSymbolProvider } from './symbols';
 import { resolveGeneratedCsPath as resolveGeneratedCsPathFromConfig } from './project-config';
 
@@ -266,12 +266,7 @@ async function activateTrustedLanguageFeatures(
     try {
         await startPrismLanguageClient(context, statusBar);
         disposeLegacyCompletionProvider();
-        const typeHoverProvider = new PrismTypeHoverProvider();
         context.subscriptions.push(
-            vscode.languages.registerHoverProvider(
-                { language: 'prsm', scheme: 'file' },
-                typeHoverProvider,
-            ),
             vscode.workspace.onDidChangeTextDocument(event => {
                 if (event.document.languageId === 'prsm') {
                     prsmExplorer.refresh();

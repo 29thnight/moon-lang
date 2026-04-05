@@ -18,9 +18,9 @@ PrSM is a Unity-first scripting language toolkit built around a Rust compiler, a
 
 - `.prsm` source files compile to generated C# for Unity projects
 - compile/build also emit sidecar `.prsmmap.json` files next to generated C# for VS Code navigation and Unity generated-script back-mapping
-- CLI support for `compile`, `check`, `build`, `hir`, `definition`, `references`, `index`, `init`, `where`, and `version`
+- CLI support for `compile`, `check`, `build`, `hir`, `definition`, `references`, `index`, `lsp`, `init`, `where`, and `version`
 - Unity import/build integration with clickable diagnostics, remapped generated-script runtime stack traces, and generated `.cs` redirect support back to PrSM source
-- VS Code support for syntax highlighting, snippets, diagnostics, explorer tooling, document/workspace symbols, references/rename, and generated C# navigation
+- VS Code support for syntax highlighting, snippets, diagnostics, trusted-workspace `prism lsp` navigation, explorer tooling, and generated C# hover/navigation
 - Automated BlazeTest EditMode smoke coverage for import, rename, delete, and diagnostic flows
 - In-repo Unity package EditMode tests for project config, diagnostic formatting, compiler resolution, and source-map helpers
 

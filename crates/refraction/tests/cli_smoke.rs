@@ -2014,14 +2014,14 @@ exclude = []
     let hover_markdown = hover_response["result"]["contents"]["value"]
         .as_str()
         .expect("expected hover markdown");
-    assert!(hover_markdown.contains("**Base:** MonoBehaviour"));
-    assert!(hover_markdown.contains("**Members:** 2"));
-    assert!(hover_markdown.contains("**Generated C#**"));
-    assert!(hover_markdown.contains("**Lookup:** Player"));
-    assert!(hover_markdown.contains("Generated/PrSM/Player.cs"));
-    assert!(hover_markdown.contains("**Unity API**"));
+    assert!(hover_markdown.contains("```prsm\ncomponent Player : MonoBehaviour\n```"));
+    assert!(hover_markdown.contains("**[Unity API]**"));
     assert!(hover_markdown.contains("UnityEngine.MonoBehaviour"));
     assert!(hover_markdown.contains("MonoBehaviour.html"));
+    assert!(!hover_markdown.contains("**Status:**"));
+    assert!(!hover_markdown.contains("**Definition:**"));
+    assert!(!hover_markdown.contains("**Lookup:**"));
+    assert!(!hover_markdown.contains("**File:**"));
 
     let symbol_response = read_lsp_response(&mut stdout, 3);
     let symbols = symbol_response["result"].as_array().unwrap();
@@ -2055,8 +2055,8 @@ exclude = []
     let mono_hover_markdown = mono_hover_response["result"]["contents"]["value"]
         .as_str()
         .expect("expected MonoBehaviour hover markdown");
-    assert!(mono_hover_markdown.contains("**type reference** MonoBehaviour"));
-    assert!(mono_hover_markdown.contains("**Unity API**"));
+    assert!(mono_hover_markdown.contains("```prsm\nMonoBehaviour\n```"));
+    assert!(mono_hover_markdown.contains("**[Unity API]**"));
     assert!(mono_hover_markdown.contains("UnityEngine.MonoBehaviour"));
     assert!(mono_hover_markdown.contains("MonoBehaviour.html"));
 

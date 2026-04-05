@@ -9,6 +9,27 @@
       content="PrSM brand landing page for the Unity-first scripting language toolkit."
     />
     <title>PrSM</title>
+    <script>
+      // Restore path from GitHub Pages 404 redirect query param
+      (function (l) {
+        if (l.search[1] === '/') {
+          var decoded = l.search
+            .slice(1)
+            .split('&')
+            .map(function (s) {
+              return s.replace(/~and~/g, '&');
+            });
+          window.history.replaceState(
+            null,
+            null,
+            l.pathname.slice(0, -1) +
+              decoded[0] +
+              (decoded[1] ? '&' + decoded[1] : '') +
+              l.hash
+          );
+        }
+      })(window.location);
+    </script>
   </head>
   <body>
     <div id="root"></div>
