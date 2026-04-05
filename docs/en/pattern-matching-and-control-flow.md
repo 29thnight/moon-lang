@@ -7,47 +7,107 @@ nav_order: 7
 
 # Pattern Matching & Control Flow
 
-## `when`
+## `if` / `else`
 
-PrSM pattern matching currently centers on `when`.
-
-```prsm
-when state {
-    EnemyState.Idle => idle()
-    EnemyState.Chase => chase()
-    else => attack()
-}
-```
-
-Condition-style `when` is also implemented:
-
-```prsm
-when {
-    hp <= 0 => die()
-    else => run()
-}
-```
-
-The semantic layer performs exhaustiveness checks for supported cases.
-
-## `if`, `for`, `while`
-
-PrSM uses brace-based control flow without parentheses.
+Conditions are written without parentheses:
 
 ```prsm
 if hp <= 0 {
     die()
+} else if hp < 20 {
+    playLowHealthFX()
 } else {
     run()
 }
+```
 
+`if` is also an expression — it produces a value:
+
+```prsm
+val label = if hp <= 0 { "Dead" } else { "Alive" }
+```
+
+## `when`
+
+`when` is PrSM's pattern matching construct. It replaces `switch` in the common case.
+
+### Subject form
+
+Matches branches against a value:
+
+```prsm
+when state {
+    EnemyState.Idle   => idle()
+    EnemyState.Chase  => chase()
+    EnemyState.Attack => attack()
+    else              => wait()
+}
+```
+
+### Condition form
+
+Matches the first true branch:
+
+```prsm
+when {
+    hp <= 0        => die()
+    hp < lowHpThreshold => playWarning()
+    else           => run()
+}
+```
+
+`when` is also an expression and can return values. The semantic layer checks for exhaustiveness where branch coverage can be determined.
+
+## `for`
+
+Range-based iteration:
+
+```prsm
 for i in 0 until count {
-    tick(i)
+    process(i)
 }
 
+for i in count downTo 0 {
+    countdown(i)
+}
+
+for i in 0 until 10 step 2 {
+    evens(i)
+}
+```
+
+## `while`
+
+```prsm
 while alive {
     updateState()
 }
 ```
 
-`if` and `when` expressions are implemented, and `break` / `continue` are supported.
+## `break` and `continue`
+
+Both are supported inside loops:
+
+```prsm
+for i in 0 until items.Count {
+    if items[i] == null { continue }
+    if i > maxItems { break }
+    process(items[i])
+}
+```
+
+## `is` type check
+
+Branch on runtime type:
+
+```prsm
+if collider is BoxCollider {
+    handleBox()
+}
+
+when shape {
+    is Circle => drawCircle()
+    is Rect   => drawRect()
+    else      => drawDefault()
+}
+```

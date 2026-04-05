@@ -7,21 +7,62 @@ nav_order: 1
 
 # Syntax
 
-PrSM keeps the surface syntax intentionally small.
+PrSM keeps its surface syntax small and regular. There are no semicolons, no parentheses on control flow, and no mandatory boilerplate around the common Unity patterns.
 
-- one file contains one top-level declaration
-- files usually begin with `using` imports
-- statements end by newline, not semicolon
-- control flow is brace-based but parenthesis-free
-- generated C# stays structurally close to source
+## File structure
 
-Minimal file shape:
+Each `.prsm` file contains exactly one top-level declaration. Files typically start with `using` imports followed by the single declaration body.
+
+```prsm
+using UnityEngine
+using System.Collections
+
+component PlayerController : MonoBehaviour {
+    serialize speed: Float = 5.0
+
+    update {
+        move()
+    }
+
+    func move() {
+        transform.Translate(Vector3.forward * speed * Time.deltaTime)
+    }
+}
+```
+
+## Key rules
+
+- **Newline-terminated statements** — no semicolons
+- **Brace-based blocks** — `{}` delimit all bodies
+- **Parenthesis-free control flow** — `if`, `when`, `for`, `while` do not wrap conditions in `()`
+- **One declaration per file** — the top-level type is the file unit
+- **`using` for imports** — brings Unity and .NET namespaces into scope
+
+## Identifiers and naming
+
+- Type names are `PascalCase`
+- Member names and field names are `camelCase`
+- Lifecycle keywords (`awake`, `update`, etc.) are lowercase reserved words
+
+## Comments
+
+```prsm
+// single-line comment
+
+/*
+  multi-line comment
+*/
+```
+
+## Minimal single-file example
 
 ```prsm
 using UnityEngine
 
-component PlayerController : MonoBehaviour {
+component Empty : MonoBehaviour {
     update {
     }
 }
 ```
+
+The generated C# for this is a normal `MonoBehaviour` subclass with an `Update()` method.
