@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="branding/prsm-logo.svg" width="96" alt="PrSM icon">
+  <img src="branding/prsm-logo-white.svg" width="96" alt="PrSM icon">
 </p>
 
 # PrSM
