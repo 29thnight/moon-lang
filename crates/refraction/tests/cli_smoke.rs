@@ -2157,6 +2157,227 @@ exclude = []
     let _ = fs::remove_dir_all(root);
 }
 
+// ── Multi-file end-to-end build ──────────────────────────────────────────────
+//
+// Builds a realistic mini-game project (4 files, all major language features)
+// and validates generated C# output for every major lowering path.
+
+#[test]
+fn build_multifile_game_project_end_to_end() {
+    let root = unique_temp_dir("prism_e2e_game");
+    write_file(
+        &root.join(".prsmproject"),
+        r#"[project]
+name = "E2EGame"
+prsm_version = "0.1.0"
+
+[compiler]
+output_dir = "Generated/PrSM"
+
+[source]
+include = ["Assets/**/*.prsm"]
+exclude = []
+"#,
+    );
+
+    // 1) Asset class — ScriptableObject lowering, serialize, Bool func
+    write_file(
+        &root.join("Assets").join("ItemData.prsm"),
+        r#"using UnityEngine
+
+asset ItemData : ScriptableObject {
+    serialize itemName: String = "Item"
+    serialize value: Int = 10
+    serialize weight: Float = 1.5
+    serialize icon: Sprite?
+
+    func isHeavy(): Bool = weight > 5.0
+}
+"#,
+    );
+
+    // 2) Component with coroutine, wait, start call
+    write_file(
+        &root.join("Assets").join("ActorHealth.prsm"),
+        r#"using UnityEngine
+
+component ActorHealth : MonoBehaviour {
+    serialize maxHp: Int = 100
+    serialize invincibleTime: Float = 1.0
+
+    var hp: Int = 100
+    var invincible: Bool = false
+
+    func takeDamage(amount: Int) {
+        if invincible { return }
+        hp -= amount
+        start hitCooldown()
+        if hp <= 0 {
+            gameObject.setActive(false)
+        }
+    }
+
+    coroutine hitCooldown() {
+        invincible = true
+        wait invincibleTime.s
+        invincible = false
+    }
+}
+"#,
+    );
+
+    // 3) Component with serialize, require, optional, input sugar, listen, intrinsic
+    write_file(
+        &root.join("Assets").join("ActorController.prsm"),
+        r#"using UnityEngine
+using UnityEngine.UI
+
+component ActorController : MonoBehaviour {
+    serialize speed: Float = 5.0
+    serialize jumpForce: Float = 10.0
+    serialize jumpButton: Button
+
+    require rb: Rigidbody
+    optional animator: Animator
+
+    start {
+        listen jumpButton.onClick {
+            jump()
+        }
+    }
+
+    update {
+        val h = input.axis("Horizontal")
+        val v = input.axis("Vertical")
+        rb.velocity = vec3(h, 0, v) * speed
+    }
+
+    func jump() {
+        rb.addForce(vec3(0, jumpForce, 0))
+        animator?.play("Jump")
+    }
+
+    intrinsic func log(message: String) {
+        Debug.Log(message);
+    }
+}
+"#,
+    );
+
+    // 4) UI component — multiple listen handlers, if-else flag toggle
+    write_file(
+        &root.join("Assets").join("GameUI.prsm"),
+        r#"using UnityEngine
+using UnityEngine.UI
+using UnityEngine.SceneManagement
+
+component GameUI : MonoBehaviour {
+    serialize playButton: Button
+    serialize quitButton: Button
+    serialize pauseButton: Button
+
+    var paused: Bool = false
+
+    start {
+        listen playButton.onClick {
+            SceneManager.loadScene("Game")
+        }
+
+        listen quitButton.onClick {
+            Application.quit()
+        }
+
+        listen pauseButton.onClick {
+            togglePause()
+        }
+    }
+
+    func togglePause() {
+        if paused {
+            paused = false
+        } else {
+            paused = true
+        }
+    }
+}
+"#,
+    );
+
+    let output = Command::new(prism())
+        .args(["build", "--json"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "build failed:\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let json_start = stdout.find('{').expect("expected JSON output");
+    let json: serde_json::Value = serde_json::from_str(&stdout[json_start..]).unwrap();
+
+    assert_eq!(json["project"], "E2EGame");
+    assert_eq!(json["errors"], 0, "expected 0 errors; got {}", json["errors"]);
+    assert_eq!(json["files"], 4);
+    assert_eq!(json["compiled"], 4);
+
+    let gen = root.join("Generated").join("PrSM");
+
+    // All four generated .cs and .prsmmap.json sidecar files must be present
+    for name in ["ItemData", "ActorHealth", "ActorController", "GameUI"] {
+        assert!(gen.join(format!("{name}.cs")).exists(), "{name}.cs missing");
+        assert!(gen.join(format!("{name}.prsmmap.json")).exists(), "{name}.prsmmap.json missing");
+    }
+
+    // asset → extends ScriptableObject, [SerializeField]
+    let item_cs = fs::read_to_string(gen.join("ItemData.cs")).unwrap();
+    assert!(item_cs.contains("ScriptableObject"), "ItemData.cs: expected ScriptableObject");
+    assert!(item_cs.contains("[SerializeField]"), "ItemData.cs: expected [SerializeField]");
+
+    // coroutine → IEnumerator + yield return + StartCoroutine
+    let health_cs = fs::read_to_string(gen.join("ActorHealth.cs")).unwrap();
+    assert!(health_cs.contains("IEnumerator"), "ActorHealth.cs: expected IEnumerator");
+    assert!(health_cs.contains("yield return"), "ActorHealth.cs: expected yield return");
+    assert!(health_cs.contains("StartCoroutine"), "ActorHealth.cs: expected StartCoroutine");
+
+    // require → GetComponent<Rigidbody> + null guard + enabled = false
+    // listen → AddListener
+    // input sugar → Input.GetAxis
+    // intrinsic → verbatim Debug.Log body
+    let ctrl_cs = fs::read_to_string(gen.join("ActorController.cs")).unwrap();
+    assert!(ctrl_cs.contains("GetComponent<Rigidbody>"), "ActorController.cs: expected Rigidbody GetComponent");
+    assert!(ctrl_cs.contains("enabled = false"), "ActorController.cs: expected enabled = false");
+    assert!(ctrl_cs.contains("AddListener"), "ActorController.cs: expected AddListener");
+    assert!(ctrl_cs.contains("Input.GetAxis"), "ActorController.cs: expected Input.GetAxis");
+    assert!(ctrl_cs.contains("Debug.Log(message)"), "ActorController.cs: expected intrinsic body");
+
+    // three listen → three AddListener calls
+    let ui_cs = fs::read_to_string(gen.join("GameUI.cs")).unwrap();
+    let listener_count = ui_cs.matches("AddListener").count();
+    assert!(
+        listener_count >= 3,
+        "GameUI.cs: expected ≥3 AddListener calls, got {listener_count}"
+    );
+
+    // HIR and index stats must cover all 4 files
+    assert_eq!(
+        json["hir"]["files_indexed"].as_u64().unwrap_or(0),
+        4,
+        "hir.files_indexed mismatch"
+    );
+    assert!(
+        json["index"]["top_level_symbols"].as_u64().unwrap_or(0) >= 4,
+        "expected ≥4 top-level index symbols, got {}",
+        json["index"]["top_level_symbols"]
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
 // ── Negative test suite ──────────────────────────────────────────────────────
 //
 // Every file under `tests/invalid/` must cause `prism check` to report at
