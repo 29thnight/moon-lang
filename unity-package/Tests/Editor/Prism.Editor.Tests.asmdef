@@ -1,0 +1,22 @@
+{
+    "name": "Prism.Editor.Tests",
+    "rootNamespace": "Prism.Editor.Tests",
+    "references": [
+        "Prism.Editor",
+        "Prism.Runtime"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false,
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ]
+}

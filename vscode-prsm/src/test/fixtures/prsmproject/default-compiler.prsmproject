@@ -1,0 +1,7 @@
+[project]
+name = "FixtureDefaultCompiler"
+prsm_version = "0.1.0"
+
+[compiler]
+prism_path = "prism"
+output_dir = "Packages/com.prsm.generated/Runtime"

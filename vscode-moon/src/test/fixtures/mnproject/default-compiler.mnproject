@@ -1,7 +1,0 @@
-[project]
-name = "FixtureDefaultCompiler"
-moon_version = "0.1.0"
-
-[compiler]
-moonc_path = "moonc"
-output_dir = "Packages/com.moon.generated/Runtime"

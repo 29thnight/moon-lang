@@ -1,3 +1,3 @@
 using System.Runtime.CompilerServices;
 
-[assembly: InternalsVisibleTo("Moon.Editor.Tests")]
+[assembly: InternalsVisibleTo("Prism.Editor.Tests")]

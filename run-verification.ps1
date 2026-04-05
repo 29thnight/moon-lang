@@ -67,7 +67,7 @@ if (-not $SkipRust) {
 if (-not $SkipVsCode) {
     Invoke-NativeStep `
         -Name "VS Code extension tests" `
-        -WorkingDirectory (Join-Path $repoRoot "vscode-moon") `
+        -WorkingDirectory (Join-Path $repoRoot "vscode-prsm") `
         -FilePath "npm" `
         -Arguments @("test")
 }

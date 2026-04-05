@@ -1,6 +1,8 @@
 /target/
 /build-output/
 
+node_modules/
+
 *.vsix
 *.pyc
 *.db-shm
@@ -12,8 +14,34 @@ __pycache__/
 
 claude-progress.md
 
-vscode-moon/node_modules/
-vscode-moon/dist/
-vscode-moon/out/
+vscode-prsm/node_modules/
+vscode-prsm/dist/
+vscode-prsm/out/
+
+docs-landing/node_modules/
+docs-landing/.vite/
+docs-landing/dist/
+docs-landing/*.tsbuildinfo
+docs-landing/node_modules/.tmp/
+
+# GitHub Pages / Jekyll local build artifacts
+.jekyll-cache/
+.jekyll-metadata
+.sass-cache/
+_site/
+.bundle/
+vendor/bundle/
+vendor/cache/
+vendor/gems/
+vendor/ruby/
+
+# Docs-local Jekyll artifacts
+docs/.jekyll-cache/
+docs/.jekyll-metadata
+docs/.sass-cache/
+docs/_site/
 
 unity_docs_scraper/__pycache__/
+
+roslyn-sidecar/bin/
+roslyn-sidecar/obj/

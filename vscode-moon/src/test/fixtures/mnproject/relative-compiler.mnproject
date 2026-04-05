@@ -1,7 +1,0 @@
-[project]
-name = "FixtureRelativeCompiler"
-moon_version = "0.1.0"
-
-[compiler]
-moonc_path = "tools/moonc.exe"
-output_dir = "Packages/com.moon.generated/Runtime"

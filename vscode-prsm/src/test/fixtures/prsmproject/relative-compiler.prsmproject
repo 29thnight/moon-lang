@@ -1,0 +1,7 @@
+[project]
+name = "FixtureRelativeCompiler"
+prsm_version = "0.1.0"
+
+[compiler]
+prism_path = "tools/prism.exe"
+output_dir = "Packages/com.prsm.generated/Runtime"

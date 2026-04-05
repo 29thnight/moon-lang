@@ -1,11 +1,11 @@
 {
-  "name": "com.moon.editor",
+  "name": "com.prsm.editor",
   "version": "0.1.0",
-  "displayName": "Moon Language",
-  "description": "Unity Editor integration for the Moon scripting language",
+  "displayName": "PrSM Language",
+  "description": "Unity Editor integration for the PrSM scripting language",
   "unity": "2022.3",
-  "keywords": ["moon", "scripting", "language", "compiler"],
+  "keywords": ["prsm", "scripting", "language", "compiler"],
   "author": {
-    "name": "Moon"
+    "name": "PrSM"
   }
 }

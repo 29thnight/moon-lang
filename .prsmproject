@@ -1,0 +1,10 @@
+[project]
+name = "PrSMDemo"
+prsm_version = "0.1.0"
+
+[compiler]
+output_dir = "build-output"
+
+[source]
+include = ["samples/**/*.prsm"]
+exclude = ["samples/test-types.prsm"]

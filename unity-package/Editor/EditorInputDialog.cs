@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEditor;
 
-namespace Moon.Editor
+namespace Prism.Editor
 {
     /// <summary>
     /// Simple input dialog for naming scripts.

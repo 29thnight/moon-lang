@@ -1,0 +1,393 @@
+{
+  "name": "prsm-lang",
+  "displayName": "PrSM",
+  "description": "Unity-first PrSM language support for VS Code with diagnostics, snippets, script exploration, and generated C# navigation.",
+  "version": "0.1.0",
+  "publisher": "prsm-lang",
+  "icon": "icons/prsm-logo.png",
+  "license": "UNLICENSED",
+  "repository": "https://github.com/29thnight/prsm-lang",
+  "homepage": "https://github.com/29thnight/prsm-lang#readme",
+  "bugs": {
+    "url": "https://github.com/29thnight/prsm-lang/issues"
+  },
+  "keywords": [
+    "prsm",
+    "unity",
+    "compiler",
+    "language",
+    "vscode"
+  ],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "extensionDependencies": [
+    "ms-dotnettools.csharp",
+    "ms-dotnettools.csdevkit",
+    "ms-dotnettools.vscode-dotnet-runtime",
+    "visualstudiotoolsforunity.vstuc"
+  ],
+  "activationEvents": [
+    "workspaceContains:**/*.prsm"
+  ],
+  "main": "./dist/extension.js",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Syntax highlighting and snippets work in untrusted mode. Diagnostics and compilation require trust.",
+      "restrictedConfigurations": [
+        "prsm.compilerPath"
+      ]
+    }
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "prsm-sidebar",
+          "title": "PrSM",
+          "icon": "icons/prsm-logo.svg"
+        }
+      ]
+    },
+    "views": {
+      "prsm-sidebar": [
+        {
+          "id": "prsmExplorer",
+          "name": "PrSM Scripts",
+          "icon": "icons/prsm-logo.svg"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "prsm",
+        "aliases": [
+          "PrSM",
+          "prsm"
+        ],
+        "extensions": [
+          ".prsm"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icons/prsm-logo.svg",
+          "dark": "./icons/prsm-logo.svg"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "prsm",
+        "scopeName": "source.prsm",
+        "path": "./syntaxes/prsm.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "prsm",
+        "path": "./snippets/prsm.code-snippets"
+      }
+    ],
+    "commands": [
+      {
+        "command": "prsm.compileFile",
+        "title": "PrSM: Compile Current File"
+      },
+      {
+        "command": "prsm.compileWorkspace",
+        "title": "PrSM: Compile Workspace"
+      },
+      {
+        "command": "prsm.checkFile",
+        "title": "PrSM: Check Current File"
+      },
+      {
+        "command": "prsm.showGenerated",
+        "title": "PrSM: Show Generated C#"
+      },
+      {
+        "command": "prsm.showSourceFromGenerated",
+        "title": "PrSM: Show Original PrSM Source"
+      },
+      {
+        "command": "prsm.visualize",
+        "title": "PrSM: Visualize Script Structure",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "prsm.refreshExplorer",
+        "title": "PrSM: Refresh Explorer",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "prsm.graphView",
+        "title": "PrSM: Graph View",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "prsm.insertLifecycle",
+        "title": "PrSM: Insert Lifecycle Block"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "prsm.refreshExplorer",
+          "when": "view == prsmExplorer",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "prsm.insertLifecycle",
+          "when": "editorLangId == prsm",
+          "group": "1_modification@0"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "prsm.showGenerated",
+        "key": "ctrl+shift+g",
+        "when": "editorLangId == prsm"
+      },
+      {
+        "command": "prsm.graphView",
+        "key": "ctrl+shift+v",
+        "when": "editorLangId == prsm"
+      },
+      {
+        "command": "prsm.insertLifecycle",
+        "key": "ctrl+shift+l",
+        "when": "editorLangId == prsm"
+      }
+    ],
+    "configurationDefaults": {
+      "editor.tokenColorCustomizations": {
+        "[*]": {
+          "textMateRules": [
+            {
+              "scope": "keyword.other.prsm",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "keyword.control.prsm",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "keyword.control.import.prsm",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "storage.modifier.prsm",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "constant.language.prsm",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "variable.language.this.prsm",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "support.class.prsm",
+              "settings": {
+                "foreground": "#16baac"
+              }
+            },
+            {
+              "scope": "entity.name.type.prsm",
+              "settings": {
+                "foreground": "#bcbec4"
+              }
+            },
+            {
+              "scope": "entity.name.type.class.prsm",
+              "settings": {
+                "foreground": "#16baac"
+              }
+            },
+            {
+              "scope": "entity.name.function.prsm",
+              "settings": {
+                "foreground": "#56a8f5"
+              }
+            },
+            {
+              "scope": "entity.name.function.call.prsm",
+              "settings": {
+                "foreground": "#57aaf7"
+              }
+            },
+            {
+              "scope": "entity.name.function.decorator.prsm",
+              "settings": {
+                "foreground": "#b3ae60"
+              }
+            },
+            {
+              "scope": "punctuation.definition.annotation.prsm",
+              "settings": {
+                "foreground": "#b3ae60"
+              }
+            },
+            {
+              "scope": "support.function.prsm",
+              "settings": {
+                "foreground": "#56a8f5"
+              }
+            },
+            {
+              "scope": "constant.numeric.prsm",
+              "settings": {
+                "foreground": "#bcbec4"
+              }
+            },
+            {
+              "scope": "string.quoted.double.prsm",
+              "settings": {
+                "foreground": "#6aab73"
+              }
+            },
+            {
+              "scope": "constant.character.escape.prsm",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "comment.line.double-slash.prsm",
+              "settings": {
+                "foreground": "#7a7e85"
+              }
+            },
+            {
+              "scope": "comment.block.prsm",
+              "settings": {
+                "foreground": "#7a7e85"
+              }
+            },
+            {
+              "scope": "variable.other.enummember.prsm",
+              "settings": {
+                "foreground": "#c77dbb",
+                "fontStyle": "italic"
+              }
+            },
+            {
+              "scope": "variable.other.member.prsm",
+              "settings": {
+                "foreground": "#bcbec4"
+              }
+            },
+            {
+              "scope": "keyword.operator.prsm",
+              "settings": {
+                "foreground": "#bcbec4"
+              }
+            },
+            {
+              "scope": "punctuation.separator.prsm",
+              "settings": {
+                "foreground": "#bcbec4"
+              }
+            },
+            {
+              "scope": "punctuation.bracket.angle.prsm",
+              "settings": {
+                "foreground": "#bcbec4"
+              }
+            },
+            {
+              "scope": "punctuation.definition.interpolation.begin.prsm",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "punctuation.definition.interpolation.end.prsm",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "variable.other.interpolation.prsm",
+              "settings": {
+                "foreground": "#c77dbb"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "configuration": {
+      "title": "PrSM",
+      "properties": {
+        "prsm.compilerPath": {
+          "type": "string",
+          "default": "prism",
+          "description": "Path to the prism compiler binary"
+        },
+        "prsm.unityApiDbPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to Unity API SQLite database"
+        },
+        "prsm.checkOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run prism check on save"
+        },
+        "prsm.showWarnings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show warnings in diagnostics"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "bundle": "node ./scripts/bundle.mjs",
+    "clean:tests": "node ./scripts/clean-tests.mjs",
+    "compile": "npm run compile:tests && npm run bundle",
+    "compile:tests": "npm run clean:tests && tsc -p ./",
+    "test": "npm run compile && node --test out/test/project-config.test.js out/test/compiler-resolver.test.js out/test/completion-helpers.test.js out/test/diagnostic-range.test.js out/test/generated-source-map.test.js out/test/navigation-helpers.test.js out/test/navigation-rename.test.js out/test/symbol-helpers.test.js",
+    "typecheck": "tsc --noEmit -p ./",
+    "watch": "node ./scripts/bundle.mjs --watch",
+    "watch:tests": "tsc -watch -p ./",
+    "package": "npx @vscode/vsce package",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.28.0",
+    "typescript": "^5.3.0"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^12.8.0"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}
