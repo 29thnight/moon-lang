@@ -1,0 +1,5 @@
+// E013: 'child' and 'parent' lookups are only valid inside component declarations
+class LookupInClass {
+    child muzzle: Transform
+    parent vehicle: Vehicle
+}

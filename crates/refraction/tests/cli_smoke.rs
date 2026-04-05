@@ -2156,3 +2156,110 @@ exclude = []
 
     let _ = fs::remove_dir_all(root);
 }
+
+// ── Negative test suite ──────────────────────────────────────────────────────
+//
+// Every file under `tests/invalid/` must cause `prism check` to report at
+// least one error.  The expected diagnostic code is embedded in a comment on
+// the first line of each file:  `// E050: description`.
+//
+// This test discovers all files automatically — adding a new negative case is
+// as simple as dropping a `.prsm` file into tests/invalid/.
+
+#[test]
+fn invalid_files_all_produce_errors() {
+    // Locate the repo root relative to this integration test binary.
+    // CARGO_MANIFEST_DIR is the crates/refraction directory.
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let invalid_dir = manifest_dir.join("..").join("..").join("tests").join("invalid");
+    let invalid_dir = invalid_dir.canonicalize().unwrap_or(invalid_dir);
+
+    let entries: Vec<_> = fs::read_dir(&invalid_dir)
+        .unwrap_or_else(|e| panic!("cannot read {}: {}", invalid_dir.display(), e))
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("prsm"))
+        .collect();
+
+    assert!(!entries.is_empty(), "No .prsm files found in {}", invalid_dir.display());
+
+    let total = entries.len();
+    let mut failures: Vec<String> = Vec::new();
+
+    for entry in entries {
+        let path = entry.path();
+        let file_name = path.file_name().unwrap().to_string_lossy().to_string();
+
+        // Read expected code from first-line comment: `// EXXX: ...`
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("cannot read {}: {}", path.display(), e));
+        let expected_code = source.lines().next().and_then(|line| {
+            let line = line.trim_start_matches('/').trim();
+            line.split(':').next().map(|s| s.trim().to_string())
+        });
+
+        let output = Command::new(prism())
+            .args(["check", path.to_str().unwrap(), "--json"])
+            .output()
+            .unwrap_or_else(|e| panic!("failed to run prism check on {}: {}", file_name, e));
+
+        // prism check returns non-zero exit code when there are errors
+        if output.status.success() {
+            failures.push(format!(
+                "FAIL [{}]: expected at least one error but prism check exited successfully",
+                file_name
+            ));
+            continue;
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let json: serde_json::Value = match serde_json::from_str(stdout.as_ref()) {
+            Ok(v) => v,
+            Err(e) => {
+                failures.push(format!(
+                    "FAIL [{}]: could not parse JSON output: {} — stdout: {}",
+                    file_name, e, stdout
+                ));
+                continue;
+            }
+        };
+
+        let error_count = json["errors"].as_u64().unwrap_or(0);
+        if error_count == 0 {
+            failures.push(format!(
+                "FAIL [{}]: JSON shows 0 errors",
+                file_name
+            ));
+            continue;
+        }
+
+        // If the file declares an expected code, verify at least one diagnostic matches.
+        if let Some(code) = expected_code {
+            if code.starts_with('E') || code.starts_with('W') {
+                let diagnostics = json["diagnostics"].as_array().cloned().unwrap_or_default();
+                let has_code = diagnostics
+                    .iter()
+                    .any(|d| d["code"].as_str() == Some(code.as_str()));
+                if !has_code {
+                    let actual_codes: Vec<&str> = diagnostics
+                        .iter()
+                        .filter_map(|d| d["code"].as_str())
+                        .collect();
+                    failures.push(format!(
+                        "FAIL [{}]: expected diagnostic code {} but got {:?}",
+                        file_name, code, actual_codes
+                    ));
+                }
+            }
+        }
+    }
+
+    if !failures.is_empty() {
+        panic!(
+            "Negative test suite failures ({}/{} files):\n  {}",
+            failures.len(),
+            total,
+            failures.join("\n  ")
+        );
+    }
+}
+

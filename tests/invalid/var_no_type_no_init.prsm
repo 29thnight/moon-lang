@@ -1,0 +1,6 @@
+// E022: Variable declared without type annotation and without initializer
+component NoInit : MonoBehaviour {
+    func prepare() {
+        var pending
+    }
+}

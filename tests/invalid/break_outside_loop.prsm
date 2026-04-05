@@ -1,0 +1,6 @@
+// E031: 'break' used outside of a loop body
+component BreakOutsideLoop : MonoBehaviour {
+    func handleInput() {
+        break
+    }
+}

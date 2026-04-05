@@ -1,0 +1,8 @@
+// E041: Cannot assign to a 'require' lookup field (auto-initialized in Awake)
+component AssignToRequire : MonoBehaviour {
+    require rb: Rigidbody
+
+    func reset() {
+        rb = null
+    }
+}

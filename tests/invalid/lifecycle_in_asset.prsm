@@ -1,3 +1,4 @@
+// E012: Lifecycle block is invalid inside an asset declaration
 asset BadAsset : ScriptableObject {
     update {
     }

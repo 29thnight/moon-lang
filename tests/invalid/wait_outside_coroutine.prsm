@@ -1,3 +1,4 @@
+// E032: 'wait' is only valid inside a coroutine declaration
 component BadComponent : MonoBehaviour {
     func doStuff() {
         wait 1.0s

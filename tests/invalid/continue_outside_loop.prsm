@@ -1,0 +1,6 @@
+// E031: 'continue' used outside of a loop body
+component ContinueOutsideLoop : MonoBehaviour {
+    func handleInput() {
+        continue
+    }
+}

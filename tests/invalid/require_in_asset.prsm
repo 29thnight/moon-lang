@@ -1,0 +1,4 @@
+// E013: 'require' fields are only valid inside component declarations
+asset BadConfig : ScriptableObject {
+    require rb: Rigidbody
+}

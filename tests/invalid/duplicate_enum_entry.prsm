@@ -1,0 +1,6 @@
+// E052: Duplicate enum entry name
+enum DuplicateEntries {
+    Idle,
+    Chase,
+    Idle
+}

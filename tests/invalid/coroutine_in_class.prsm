@@ -1,0 +1,6 @@
+// E060: Coroutine declarations are only valid inside component declarations
+class UtilityClass {
+    coroutine flash() {
+        wait 0.5s
+    }
+}

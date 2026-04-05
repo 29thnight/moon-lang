@@ -1,0 +1,6 @@
+// E020: Type mismatch — assigning String literal to Int field
+component TypeMismatch : MonoBehaviour {
+    func check() {
+        val count: Int = "hello"
+    }
+}

@@ -1,0 +1,7 @@
+// E040: Cannot assign to an immutable 'val' variable
+component AssignToVal : MonoBehaviour {
+    func compute() {
+        val maxHp = 100
+        maxHp = 200
+    }
+}

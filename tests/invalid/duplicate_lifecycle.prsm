@@ -1,0 +1,10 @@
+// E014: Duplicate lifecycle block inside one component
+component DuplicateLifecycle : MonoBehaviour {
+    update {
+        tick()
+    }
+
+    update {
+        tick()
+    }
+}
