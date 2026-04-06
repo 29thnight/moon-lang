@@ -381,6 +381,7 @@ solid_warnings = false  # 또는 개별: disabled_warnings = ["W010", "W012"]
 | `bind` 문법 | MVVM 데이터 바인딩 — Unity UI Toolkit 안정화 후 |
 | async/await | UniTask 통합 — Unity 공식 지원 상태에 따라 |
 | 직렬화 자동 생성 | JSON/Binary 시리얼라이저 — v4 후보 |
+| Hot Reload (연구) | .prsm 수정 → Play 모드 상태 유지하며 반영. PrSM이 AST diff로 변경 감지 가능하여 IL 비교보다 정확. 네트워크 라이브러리 충돌 없음 (순수 C# 생성). 다만 IL 패칭/DynamicMethod 인프라 구축이 별도 프로젝트급이므로 v4 이후 연구 과제 |
 
 ### 제외 (영구)
 
