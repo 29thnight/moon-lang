@@ -43,7 +43,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Copy docs into public for build
-        run: cp -r docs docs-landing/public/docs
+        run: cp -r docs/. docs-landing/public/docs/
 
       - name: Build
         working-directory: docs-landing
