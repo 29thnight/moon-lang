@@ -255,6 +255,128 @@ config GameConfig {
 
 ---
 
+### 카테고리 E: 핵심 문법 확장
+
+현재 PrSM에 없어서 `intrinsic`으로 빠질 수밖에 없는 기본 문법 요소들.
+
+#### E1. try/catch/finally
+
+현재 PrSM에서 예외 처리가 **전혀 불가능**. 모든 에러 처리가 intrinsic으로 빠짐.
+
+```prsm
+func loadConfig(path: String): Config {
+    try {
+        val data = File.readAllText(path)
+        return Config.parse(data)
+    } catch (e: FileNotFoundException) {
+        log("Config not found, using defaults")
+        return Config.default()
+    } catch (e: Exception) {
+        error("Failed to load config: ${e.message}")
+        return Config.default()
+    } finally {
+        log("Config load attempted")
+    }
+}
+```
+
+생성 C#: 표준 try/catch/finally 그대로.
+
+**가치:** 매우 높음 — 에러 처리는 모든 프로그램의 기본
+**복잡도:** 낮음 — C#과 1:1 매핑
+
+#### E2. lambda/클로저
+
+현재 lambda는 `listen` 블록 내부에서만 암묵적으로 사용. 범용 lambda 표현식이 없음.
+
+```prsm
+// lambda 변수
+val greet = { name: String => "Hello, $name" }
+log(greet("PrSM"))
+
+// 콜백 파라미터
+func doAfterDelay(seconds: Float, action: () => Unit) {
+    start delayedAction(seconds, action)
+}
+
+// LINQ 스타일
+val alive = enemies.filter({ e => e.isAlive })
+val names = players.map({ p => p.name })
+
+// 후행 lambda (Kotlin 스타일)
+enemies.filter { it.isAlive }
+       .sortBy { it.distanceTo(player) }
+       .take(3)
+```
+
+생성 C#: `System.Action`, `System.Func<>`, lambda 표현식.
+
+**가치:** 매우 높음 — 이벤트 콜백, 컬렉션 처리, 비동기 완료 핸들러
+**복잡도:** 중간 — 타입 추론이 복잡해질 수 있음 (클로저 캡처)
+
+#### E3. static 멤버 + const
+
+유틸리티 함수와 상수를 PrSM에서 정의할 수 없음.
+
+```prsm
+class MathUtils {
+    const PI: Float = 3.14159
+    const MAX_HEALTH: Int = 100
+
+    static func clamp(value: Float, min: Float, max: Float): Float {
+        if value < min { return min }
+        if value > max { return max }
+        return value
+    }
+
+    static func lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
+}
+
+// 사용
+val angle = MathUtils.PI * 2.0
+val clamped = MathUtils.clamp(value, 0.0, 1.0)
+```
+
+생성 C#: `public const`, `public static` 그대로.
+
+**가치:** 높음 — 모든 프로젝트에 유틸리티/상수 필요
+**복잡도:** 낮음 — 키워드 추가 + lowering 직역
+
+#### E4. 컬렉션 리터럴 + 타입 캐스팅
+
+컬렉션 생성이 불필요하게 장황하고, 타입 변환 구문이 없음.
+
+```prsm
+// 컬렉션 리터럴
+val numbers = [1, 2, 3, 4, 5]
+val names = ["Alice", "Bob", "Charlie"]
+val lookup = {"hp": 100, "mp": 50}        // Map 리터럴
+val empty = <Int>[]                         // 빈 타입 리스트
+
+// 타입 캐스팅
+val collider = hit.collider
+val enemy = collider as Enemy?             // 안전 캐스트 (실패 시 null)
+val box = collider as! BoxCollider         // 강제 캐스트 (실패 시 예외)
+
+// is + 스마트 캐스트 (기존 문법 확장)
+if collider is BoxCollider {
+    // collider가 자동으로 BoxCollider 타입으로 좁혀짐
+    log(collider.size)
+}
+```
+
+생성 C#:
+- `[1, 2, 3]` → `new List<int> { 1, 2, 3 }`
+- `{"a": 1}` → `new Dictionary<string, int> { {"a", 1} }`
+- `as Enemy?` → `as Enemy`
+- `as! BoxCollider` → `(BoxCollider)` (InvalidCastException 가능)
+- is 스마트 캐스트 → C# pattern matching `if (collider is BoxCollider box)`
+
+**가치:** 높음 — 일상적 코드의 간결함
+**복잡도:** 중간 — 리터럴 타입 추론이 필요
+
+---
+
 ## 3. 우선순위 평가
 
 | # | 기능 | 가치 | 복잡도 | 가치/복잡도 | 카테고리 |
@@ -278,20 +400,24 @@ config GameConfig {
 
 ### Tier 1 (핵심)
 
-| # | 기능 | 근거 |
-|---|------|------|
-| 1 | **async/await** | 가치/복잡도 비율 최고. 코루틴의 한계를 넘는 비동기 필수 |
-| 2 | **state machine** | 게임 개발 핵심 패턴. v3의 singleton/pool에 이은 자연스러운 확장 |
-| 3 | **에러 메시지 개선** | DX 핵심. 새 기능 추가 전 기존 에러 경험 개선이 선행되어야 함 |
-| 4 | **옵티마이저 강화** | v3에서 시작한 인프라 위에 실용적 규칙 추가 |
+| # | 기능 | 유형 | 근거 |
+|---|------|------|------|
+| 1 | **try/catch/finally** | 문법 | 에러 처리 기본. 없으면 모든 예외 처리가 intrinsic으로 빠짐 |
+| 2 | **lambda/클로저** | 문법 | `val onClick = { x => log(x) }`. 이벤트 콜백, LINQ, 범용 함수형 |
+| 3 | **static 멤버 + const** | 문법 | 유틸리티 함수, 상수 정의. `static func`, `const val` |
+| 4 | **컬렉션 리터럴 + 타입 캐스팅** | 문법 | `[1, 2, 3]` 초기화, `as` 캐스팅, 타입 변환 |
+| 5 | **async/await** | 비동기 | 코루틴 한계를 넘는 비동기. UniTask 통합 |
+| 6 | **state machine** | 패턴 | 게임 개발 핵심 패턴. 60줄→15줄 |
+| 7 | **에러 메시지 개선** | DX | Rust/Elm 스타일 친절한 에러 + help 힌트 |
+| 8 | **옵티마이저 강화** | 성능 | v3 인프라 위에 실용적 규칙 추가 |
 
 ### Tier 2 (고가치)
 
-| # | 기능 | 근거 |
-|---|------|------|
-| 5 | **command** | 상대적으로 단순하면서 에디터 도구/턴제 게임에 즉시 유용 |
-| 6 | **bind (MVVM)** | UI 코드 비중이 크지만 Unity UI Toolkit 안정화 상태에 따라 |
-| 7 | **직렬화** | 세이브/로드 보일러플레이트 제거 |
+| # | 기능 | 유형 | 근거 |
+|---|------|------|------|
+| 9 | **command** | 패턴 | 에디터 도구/턴제 게임에 즉시 유용 |
+| 10 | **bind (MVVM)** | 패턴 | UI 코드 비중이 크지만 UI Toolkit 안정화에 따라 |
+| 11 | **직렬화** | 데이터 | 세이브/로드 보일러플레이트 제거 |
 
 ### Tier 3 (미래/연구)
 
