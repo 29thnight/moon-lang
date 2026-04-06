@@ -6,10 +6,10 @@
   "publisher": "prsm-lang",
   "icon": "icons/prsm-logo.png",
   "license": "UNLICENSED",
-  "repository": "https://github.com/29thnight/prsm-lang",
-  "homepage": "https://github.com/29thnight/prsm-lang#readme",
+  "repository": "https://github.com/29thnight/PrSM",
+  "homepage": "https://github.com/29thnight/PrSM#readme",
   "bugs": {
-    "url": "https://github.com/29thnight/prsm-lang/issues"
+    "url": "https://github.com/29thnight/PrSM/issues"
   },
   "keywords": [
     "prsm",

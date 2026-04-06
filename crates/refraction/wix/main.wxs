@@ -1,0 +1,118 @@
+<?xml version='1.0' encoding='windows-1252'?>
+<!--
+  PrSM Language Installer
+  Built with cargo-wix / WiX Toolset
+
+  Installs:
+    1. prism.exe compiler to Program Files\PrSM
+    2. Adds install directory to system PATH
+    3. Bundles VSIX for VS Code extension (auto-install attempted)
+    4. Shows Unity package install guidance on completion
+-->
+<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
+
+    <Product
+        Id='*'
+        Name='PrSM Language'
+        UpgradeCode='A1B2C3D4-E5F6-7890-ABCD-EF1234567890'
+        Manufacturer='PrSM Contributors'
+        Language='1033'
+        Codepage='1252'
+        Version='0.1.0'>
+
+        <Package Id='*'
+            Keywords='Installer'
+            Description='PrSM Language - Unity-first scripting language toolkit'
+            Manufacturer='PrSM Contributors'
+            InstallerVersion='450'
+            Languages='1033'
+            Compressed='yes'
+            InstallScope='perMachine'
+            SummaryCodepage='1252' />
+
+        <MajorUpgrade
+            Schedule='afterInstallInitialize'
+            DowngradeErrorMessage='A newer version of [ProductName] is already installed. Setup will now exit.' />
+
+        <Media Id='1' Cabinet='media1.cab' EmbedCab='yes' DiskPrompt='CD-ROM #1' />
+        <Property Id='DiskPrompt' Value='PrSM Language Installation' />
+
+        <!-- ========================================================== -->
+        <!-- Directory Layout                                            -->
+        <!-- ========================================================== -->
+
+        <Directory Id='TARGETDIR' Name='SourceDir'>
+            <Directory Id='ProgramFiles64Folder' Name='PFiles'>
+                <Directory Id='APPLICATIONFOLDER' Name='PrSM'>
+                    <Component Id='Path' Guid='B2C3D4E5-F6A7-8901-BCDE-F12345678901' KeyPath='yes'>
+                        <Environment Id='PATH' Name='PATH' Value='[APPLICATIONFOLDER]'
+                            Permanent='no' Part='last' Action='set' System='yes' />
+                    </Component>
+                    <Component Id='prism_exe' Guid='C3D4E5F6-A7B8-9012-CDEF-123456789012'>
+                        <File Id='prism.exe' Name='prism.exe'
+                            Source='$(var.CargoTargetBinDir)\prism.exe' KeyPath='yes' />
+                    </Component>
+                    <Component Id='vsix_bundle' Guid='D4E5F6A7-B8C9-0123-DEFA-234567890123'>
+                        <File Id='prsm_vsix' Name='prsm-lang.prsm-lang.vsix'
+                            Source='$(var.ProjectDir)\..\..\vscode-prsm\artifacts\prsm-lang.prsm-lang-0.1.0.vsix'
+                            KeyPath='yes' />
+                    </Component>
+                </Directory>
+            </Directory>
+        </Directory>
+
+        <!-- ========================================================== -->
+        <!-- Features                                                    -->
+        <!-- ========================================================== -->
+
+        <Feature Id='Compiler' Title='PrSM Compiler' Description='prism.exe compiler and PATH registration'
+            Level='1' ConfigurableDirectory='APPLICATIONFOLDER' AllowAdvertise='no'
+            Display='expand' Absent='disallow'>
+            <ComponentRef Id='prism_exe' />
+            <ComponentRef Id='Path' />
+        </Feature>
+
+        <Feature Id='VSCodeExtension' Title='VS Code Extension'
+            Description='PrSM VS Code extension (VSIX). Automatically installs if VS Code is detected.'
+            Level='1' AllowAdvertise='no'>
+            <ComponentRef Id='vsix_bundle' />
+        </Feature>
+
+        <!-- ========================================================== -->
+        <!-- Custom Actions: VS Code extension install                   -->
+        <!-- ========================================================== -->
+
+        <Property Id='VSCODECLI' Value='code' />
+
+        <!-- Detect VS Code CLI -->
+        <Property Id='VSCODEPATH'>
+            <RegistrySearch Id='VSCodeRegistry' Root='HKCU'
+                Key='Software\Microsoft\Windows\CurrentVersion\Uninstall\{771FD6B0-FA20-440A-A002-3B3BAC16DC50}_is1'
+                Name='InstallLocation' Type='raw' />
+        </Property>
+
+        <CustomAction Id='InstallVSIX'
+            Directory='APPLICATIONFOLDER'
+            ExeCommand='cmd.exe /c "code --install-extension "[APPLICATIONFOLDER]prsm-lang.prsm-lang.vsix" --force 2>nul"'
+            Execute='deferred'
+            Impersonate='yes'
+            Return='ignore' />
+
+        <InstallExecuteSequence>
+            <Custom Action='InstallVSIX' Before='InstallFinalize'>
+                <![CDATA[NOT Installed AND &VSCodeExtension = 3]]>
+            </Custom>
+        </InstallExecuteSequence>
+
+        <!-- ========================================================== -->
+        <!-- UI: Minimal with completion message                         -->
+        <!-- ========================================================== -->
+
+        <UIRef Id='WixUI_Minimal' />
+        <WixVariable Id='WixUILicenseRtf' Value='wix\License.rtf' />
+
+        <Property Id='WIXUI_EXITDIALOGOPTIONALTEXT'
+            Value='PrSM has been installed successfully.&#13;&#10;&#13;&#10;To install the Unity package, open Unity and go to:&#13;&#10;Window > Package Manager > + > Add package from git URL:&#13;&#10;https://github.com/29thnight/PrSM.git?path=unity-package' />
+
+    </Product>
+</Wix>

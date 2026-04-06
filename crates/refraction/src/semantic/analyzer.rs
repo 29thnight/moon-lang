@@ -38,6 +38,10 @@ pub struct Analyzer {
     loop_depth: u32,
     /// Known enum names → entries (for exhaustiveness checking)
     enum_entries: std::collections::HashMap<String, Vec<String>>,
+    /// Enum name → (entry name → payload arity) for pattern binding validation
+    enum_payloads: std::collections::HashMap<String, std::collections::HashMap<String, usize>>,
+    /// Data class name → field names for destructure validation
+    dataclass_fields: std::collections::HashMap<String, Vec<String>>,
     known_project_types: std::collections::HashMap<String, PrismType>,
     current_file_path: Option<PathBuf>,
     hir_definitions: Vec<HirDefinition>,
@@ -60,6 +64,8 @@ impl Analyzer {
             body_ctx: BodyContext::None,
             loop_depth: 0,
             enum_entries: std::collections::HashMap::new(),
+            enum_payloads: std::collections::HashMap::new(),
+            dataclass_fields: std::collections::HashMap::new(),
             known_project_types: std::collections::HashMap::new(),
             current_file_path: None,
             hir_definitions: Vec::new(),
@@ -349,6 +355,9 @@ impl Analyzer {
                         field.name_span,
                     );
                 }
+                // Store field names for destructure pattern validation.
+                let field_names: Vec<String> = fields.iter().map(|f| f.name.clone()).collect();
+                self.dataclass_fields.insert(name.clone(), field_names);
                 self.current_decl_name = None;
                 self.decl_ctx = DeclContext::None;
             }
@@ -385,6 +394,12 @@ impl Analyzer {
                         );
                     }
                 }
+                // Store payload arity per entry for pattern binding validation.
+                let mut payloads = std::collections::HashMap::new();
+                for entry in entries {
+                    payloads.insert(entry.name.clone(), params.len());
+                }
+                self.enum_payloads.insert(name.clone(), payloads);
                 self.current_decl_name = None;
                 self.decl_ctx = DeclContext::None;
             }
@@ -926,6 +941,24 @@ impl Analyzer {
             }
             Stmt::StopAll { .. } => {}
             Stmt::Listen { event, lifetime, bound_name, body, span, .. } => {
+                // Validate that lifecycle-bound listen (until disable/destroy) is only
+                // used inside a component. In a class or asset, OnDisable/OnDestroy
+                // are not available, so the cleanup code would be invalid.
+                if matches!(lifetime, ListenLifetime::UntilDisable | ListenLifetime::UntilDestroy | ListenLifetime::Manual)
+                    && self.decl_ctx != DeclContext::Component
+                {
+                    let keyword = match lifetime {
+                        ListenLifetime::UntilDisable => "until disable",
+                        ListenLifetime::UntilDestroy => "until destroy",
+                        ListenLifetime::Manual => "manual",
+                        _ => "",
+                    };
+                    self.diag.error(
+                        "E083",
+                        format!("'listen {} {{ }}' is only valid inside a component declaration", keyword),
+                        *span,
+                    );
+                }
                 self.record_listen_site(lifetime.clone(), bound_name.clone(), *span);
                 self.analyze_expr(event);
                 self.scopes.push_scope();
@@ -1483,6 +1516,9 @@ impl Analyzer {
         has_guard: bool,
         span: Span,
     ) {
+        // Validate pattern bindings against known types.
+        self.validate_pattern_bindings(&kind, &type_name, &bindings, span);
+
         let Some(file_path) = self.current_file_path.clone() else {
             return;
         };
@@ -1496,6 +1532,71 @@ impl Analyzer {
             file_path,
             span,
         });
+    }
+
+    /// Validate pattern binding arity against known enum payloads / data class fields.
+    /// Only validates against types defined in the current file — external types are silently
+    /// skipped to avoid false positives.
+    fn validate_pattern_bindings(
+        &mut self,
+        kind: &HirPatternBindingKind,
+        type_name: &str,
+        bindings: &[String],
+        span: Span,
+    ) {
+        match kind {
+            HirPatternBindingKind::When => {
+                // type_name is e.g. "EnemyState.Chase" — split into enum + variant.
+                let segments: Vec<&str> = type_name.splitn(2, '.').collect();
+                if segments.len() < 2 {
+                    return; // Single-segment pattern — nothing to validate here.
+                }
+                let enum_name = segments[0];
+                let variant = segments[1];
+
+                // Only validate against enums defined in this file.
+                let Some(entries) = self.enum_entries.get(enum_name) else {
+                    return;
+                };
+                if !entries.contains(&variant.to_string()) {
+                    self.diag.error(
+                        "E081",
+                        format!("Unknown variant '{}' for enum '{}'", variant, enum_name),
+                        span,
+                    );
+                    return;
+                }
+                if let Some(payloads) = self.enum_payloads.get(enum_name) {
+                    if let Some(&expected_arity) = payloads.get(variant) {
+                        if !bindings.is_empty() && bindings.len() != expected_arity {
+                            self.diag.error(
+                                "E082",
+                                format!(
+                                    "Pattern binds {} variable(s) but '{}.{}' expects {}",
+                                    bindings.len(), enum_name, variant, expected_arity,
+                                ),
+                                span,
+                            );
+                        }
+                    }
+                }
+            }
+            HirPatternBindingKind::ValDestructure | HirPatternBindingKind::ForDestructure => {
+                if let Some(fields) = self.dataclass_fields.get(type_name) {
+                    if bindings.len() != fields.len() {
+                        self.diag.error(
+                            "E082",
+                            format!(
+                                "Pattern binds {} variable(s) but '{}' has {} field(s)",
+                                bindings.len(), type_name, fields.len(),
+                            ),
+                            span,
+                        );
+                    }
+                }
+                // Unknown type_name → skip (could be external type).
+            }
+        }
     }
 
     fn record_listen_site(
@@ -1580,6 +1681,22 @@ mod tests {
         assert!(parser.errors().is_empty(), "Parse errors: {:?}", parser.errors());
         let mut analyzer = Analyzer::new();
         analyzer.analyze_file(&file);
+        analyzer.diag.diagnostics
+    }
+
+    /// Analyze multiple source strings together so that types from earlier
+    /// sources are visible when analyzing later ones (simulates multi-file
+    /// project where enum/data class definitions are shared).
+    fn analyze_multi(sources: &[&str]) -> Vec<Diagnostic> {
+        let mut analyzer = Analyzer::new();
+        for source in sources {
+            let mut lexer = Lexer::new(source);
+            let tokens = lexer.tokenize();
+            let mut parser = Parser::new(tokens);
+            let file = parser.parse_file();
+            assert!(parser.errors().is_empty(), "Parse errors: {:?}", parser.errors());
+            analyzer.analyze_file(&file);
+        }
         analyzer.diag.diagnostics
     }
 
@@ -1736,6 +1853,63 @@ component PlayerController : MonoBehaviour {
 }"#;
         let diags = errors(src);
         assert!(diags.is_empty(), "Unexpected errors: {:?}", diags);
+    }
+
+    // === E081: Unknown enum variant in pattern ===
+
+    #[test]
+    fn test_pattern_unknown_variant() {
+        let diags = analyze_multi(&[
+            "enum State {\n  Idle,\n  Running\n}",
+            "component Foo : MonoBehaviour {\n  var state: State = State.Idle\n  update {\n    when state {\n      State.NonExistent(x) => fail()\n    }\n  }\n}",
+        ]);
+        let errs: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Error).collect();
+        assert!(errs.iter().any(|d| d.code == "E081"), "expected E081 for unknown variant, got: {:?}", errs);
+    }
+
+    // === E082: Pattern arity mismatch ===
+
+    #[test]
+    fn test_pattern_arity_mismatch() {
+        let diags = analyze_multi(&[
+            "enum Action(val target: String) {\n  Move(\"p\"),\n  Attack(\"e\")\n}",
+            "component Foo : MonoBehaviour {\n  var action: Action = Action.Move(\"p\")\n  update {\n    when action {\n      Action.Move(target, extra) => doMove(target)\n    }\n  }\n}",
+        ]);
+        let errs: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Error).collect();
+        assert!(errs.iter().any(|d| d.code == "E082"), "expected E082 for arity mismatch, got: {:?}", errs);
+    }
+
+    #[test]
+    fn test_destructure_arity_mismatch() {
+        let diags = analyze_multi(&[
+            "data class Stats(hp: Int, speed: Float)",
+            "component Foo : MonoBehaviour {\n  func f() {\n    val Stats(hp, speed, extra) = getStats()\n  }\n}",
+        ]);
+        let errs: Vec<_> = diags.iter().filter(|d| d.severity == Severity::Error).collect();
+        assert!(errs.iter().any(|d| d.code == "E082"), "expected E082 for destructure arity mismatch, got: {:?}", errs);
+    }
+
+    // === E083: listen lifetime in wrong context ===
+
+    #[test]
+    fn test_listen_until_disable_in_class() {
+        let src = "class Helper {\n  func setup(button: Button) {\n    listen button.onClick until disable {\n      fire()\n    }\n  }\n}";
+        let diags = errors(src);
+        assert!(diags.iter().any(|d| d.code == "E083"), "expected E083 for listen until disable in class, got: {:?}", diags);
+    }
+
+    #[test]
+    fn test_listen_manual_in_asset() {
+        let src = "asset Config : ScriptableObject {\n  func setup(button: Button) {\n    val token = listen button.onClick manual {\n      fire()\n    }\n  }\n}";
+        let diags = errors(src);
+        assert!(diags.iter().any(|d| d.code == "E083"), "expected E083 for listen manual in asset, got: {:?}", diags);
+    }
+
+    #[test]
+    fn test_listen_until_disable_in_component_ok() {
+        let src = "component Foo : MonoBehaviour {\n  serialize button: Button\n  start {\n    listen button.onClick until disable {\n      fire()\n    }\n  }\n}";
+        let diags = errors(src);
+        assert!(!diags.iter().any(|d| d.code == "E083"), "should not error for listen until disable in component");
     }
 
     #[test]

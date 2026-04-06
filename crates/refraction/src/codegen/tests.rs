@@ -375,4 +375,167 @@ component PlayerHealth : MonoBehaviour {
         assert!(output.contains("invincible = true;"));
         assert!(output.contains("invincible = false;"));
     }
+
+    // ── v2 listen lifetime tests ──────────────────────────────────
+
+    #[test]
+    fn test_listen_until_disable() {
+        let src = "component Foo : MonoBehaviour {\n  serialize button: Button\n  start {\n    listen button.onClick until disable {\n      fire()\n    }\n  }\n}";
+        let output = compile(src);
+        assert!(output.contains("private System.Action _prsm_h0;"), "should generate handler field");
+        assert!(output.contains("_prsm_h0 ="), "should assign lambda to field");
+        assert!(output.contains("button.onClick.AddListener(_prsm_h0)"), "should add listener with field");
+        assert!(output.contains("__prsm_cleanup_disable"), "should generate cleanup method");
+        assert!(output.contains("button.onClick.RemoveListener(_prsm_h0)"), "cleanup should remove listener");
+        assert!(output.contains("_prsm_h0 = null"), "cleanup should null the field");
+        assert!(output.contains("OnDisable"), "should have OnDisable lifecycle");
+    }
+
+    #[test]
+    fn test_listen_until_destroy() {
+        let src = "component Foo : MonoBehaviour {\n  serialize button: Button\n  start {\n    listen button.onClick until destroy {\n      fire()\n    }\n  }\n}";
+        let output = compile(src);
+        assert!(output.contains("__prsm_cleanup_destroy"), "should generate destroy cleanup");
+        assert!(output.contains("OnDestroy"), "should have OnDestroy lifecycle");
+        assert!(output.contains("_prsm_h0 = null"), "cleanup should null the field");
+    }
+
+    #[test]
+    fn test_listen_manual_and_unlisten() {
+        let src = "component Foo : MonoBehaviour {\n  serialize button: Button\n  start {\n    val token = listen button.onClick manual {\n      fire()\n    }\n    unlisten token\n  }\n}";
+        let output = compile(src);
+        assert!(output.contains("_prsm_h0 ="), "should assign handler");
+        assert!(output.contains("button.onClick.AddListener(_prsm_h0)"), "should add listener");
+        assert!(output.contains("button.onClick.RemoveListener(_prsm_h0)"), "unlisten should remove listener");
+        assert!(output.contains("_prsm_h0 = null"), "unlisten should null the field");
+    }
+
+    #[test]
+    fn test_unlisten_in_user_func() {
+        let src = "component Foo : MonoBehaviour {\n  serialize button: Button\n  start {\n    val token = listen button.onClick manual {\n      fire()\n    }\n  }\n  func cleanup() {\n    unlisten token\n  }\n}";
+        let output = compile(src);
+        assert!(output.contains("button.onClick.RemoveListener(_prsm_h0)"), "unlisten in func should generate real code");
+        assert!(!output.contains("/* unlisten"), "should NOT emit placeholder comment");
+    }
+
+    // ── v2 pattern matching tests ─────────────────────────────────
+
+    #[test]
+    fn test_when_enum_payload_binding() {
+        // compile() handles single declaration — test the enum extension output
+        // which generates switch/case for payload access.
+        let src = "enum EnemyState(val target: String) {\n  Idle(\"\"),\n  Chase(\"player\")\n}";
+        let output = compile(src);
+        assert!(output.contains("case EnemyState.Idle"), "should have case arm for Idle");
+        assert!(output.contains("case EnemyState.Chase"), "should have case arm for Chase");
+        assert!(output.contains("Target(this EnemyState"), "should generate payload accessor");
+    }
+
+    #[test]
+    fn test_destructure_val() {
+        // Single-declaration test: component with inline destructure
+        let src = "component Foo : MonoBehaviour {\n  func f() {\n    val Stats(hp, speed) = getStats()\n  }\n}";
+        let output = compile(src);
+        assert!(output.contains("var _prsm_d = "), "should create temp variable");
+        assert!(output.contains("_prsm_d.hp"), "should access hp field");
+        assert!(output.contains("_prsm_d.speed"), "should access speed field");
+    }
+
+    // ── v2 generic inference test ─────────────────────────────────
+
+    #[test]
+    fn test_generic_inference_from_variable_type() {
+        let src = "component Foo : MonoBehaviour {\n  func f() {\n    val rb: Rigidbody = get()\n  }\n}";
+        let output = compile(src);
+        assert!(output.contains("GetComponent<Rigidbody>()"), "should infer Rigidbody generic arg");
+    }
+
+    // ── v2 input system player form test ──────────────────────────
+
+    #[test]
+    fn test_input_player_action_vector2() {
+        let src = r#"component Foo : MonoBehaviour {
+  update {
+    val look = input.player("Gameplay").action("Look").vector2
+  }
+}"#;
+        let output = compile(src);
+        assert!(output.contains("PlayerInput"), "should inject PlayerInput field");
+        assert!(output.contains(r#"actions["Gameplay/Look"].ReadValue<UnityEngine.Vector2>()"#),
+            "should generate player/action lookup with map prefix");
+    }
+
+    // ── T2: listen multiple subscriptions & ordering ──────────────
+
+    #[test]
+    fn test_listen_multiple_until_disable() {
+        let src = r#"component Foo : MonoBehaviour {
+  serialize buttonA: Button
+  serialize buttonB: Button
+  start {
+    listen buttonA.onClick until disable {
+      fireA()
+    }
+    listen buttonB.onClick until disable {
+      fireB()
+    }
+  }
+}"#;
+        let output = compile(src);
+        assert!(output.contains("_prsm_h0"), "should have first handler field");
+        assert!(output.contains("_prsm_h1"), "should have second handler field");
+        assert!(output.contains("buttonA.onClick.RemoveListener(_prsm_h0)"), "cleanup should remove first");
+        assert!(output.contains("buttonB.onClick.RemoveListener(_prsm_h1)"), "cleanup should remove second");
+    }
+
+    // ── T3: for loop destructure ──────────────────────────────────
+
+    #[test]
+    fn test_for_loop_destructure() {
+        let src = r#"component Foo : MonoBehaviour {
+  func f() {
+    for Spawn(pos, delay) in spawns {
+      spawnAt(pos, delay)
+    }
+  }
+}"#;
+        let output = compile(src);
+        assert!(output.contains("foreach"), "should lower to foreach");
+        assert!(output.contains("spawns"), "should iterate over spawns");
+    }
+
+    // ── T5: Input System all states ───────────────────────────────
+
+    #[test]
+    fn test_input_released() {
+        let src = r#"component Foo : MonoBehaviour {
+  update {
+    if input.action("Jump").released { land() }
+  }
+}"#;
+        let output = compile(src);
+        assert!(output.contains("WasReleasedThisFrame()"), "should generate WasReleasedThisFrame");
+    }
+
+    #[test]
+    fn test_input_held() {
+        let src = r#"component Foo : MonoBehaviour {
+  update {
+    if input.action("Sprint").held { sprint() }
+  }
+}"#;
+        let output = compile(src);
+        assert!(output.contains("IsPressed()"), "should generate IsPressed");
+    }
+
+    #[test]
+    fn test_input_scalar() {
+        let src = r#"component Foo : MonoBehaviour {
+  update {
+    val aim = input.action("Aim").scalar
+  }
+}"#;
+        let output = compile(src);
+        assert!(output.contains("ReadValue<float>()"), "should generate ReadValue<float>");
+    }
 }

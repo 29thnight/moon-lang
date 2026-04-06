@@ -1,0 +1,8 @@
+// E083: listen until disable is only valid inside a component
+class Helper {
+  func setup(button: Button) {
+    listen button.onClick until disable {
+      fire()
+    }
+  }
+}

@@ -86,10 +86,10 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                         cs_members.push(lower_lifecycle_with_ctx(*kind, params, body, &mut listen_ctx));
                     }
                     Member::Func { .. } => {
-                        cs_members.push(lower_func_member(m, &callable_signatures));
+                        cs_members.push(lower_func_member_with_ctx(m, &mut listen_ctx));
                     }
                     Member::Coroutine { name: cname, params, body, .. } => {
-                        cs_members.push(lower_coroutine(cname, params, body, &callable_signatures));
+                        cs_members.push(lower_coroutine_with_ctx(cname, params, body, &mut listen_ctx));
                     }
                     Member::IntrinsicFunc { visibility, name: fname, params, return_ty, code, span, .. } => {
                         cs_members.push(lower_intrinsic_func(*visibility, fname, params, return_ty.as_ref(), code, *span));
@@ -1082,8 +1082,80 @@ fn lower_intrinsic_coroutine(name: &str, params: &[Param], code: &str, span: Spa
     }
 }
 
+// ── Component-aware function lowering ──────────────────────────
+
+/// Like `lower_func_member` but routes the body through `lower_stmts_with_ctx`
+/// so that `listen`/`unlisten` inside user functions resolve against the
+/// component-level `ComponentCtx`.
+fn lower_func_member_with_ctx(m: &Member, ctx: &mut ComponentCtx) -> CsMember {
+    match m {
+        Member::Func { visibility, is_override, name, params, return_ty, body, .. } => {
+            let ret = return_ty.as_ref().map(|t| lower_type(t)).unwrap_or("void".into());
+            let ps: Vec<CsParam> = params.iter().map(|p| CsParam {
+                ty: lower_type(&p.ty), name: p.name.clone(), default: None,
+            }).collect();
+
+            let mut mods = lower_visibility(*visibility);
+            if *is_override {
+                mods = format!("{} override", mods);
+            }
+
+            let cs_body = match body {
+                FuncBody::Block(block) => {
+                    lower_stmts_with_ctx(&block.stmts, ctx, return_ty.as_ref())
+                }
+                FuncBody::ExprBody(expr) => {
+                    vec![CsStmt::Return(
+                        Some(lower_expr_with_expected_type(expr, return_ty.as_ref(), Some(&ctx.callable_signatures))),
+                        Some(expr_span(expr)),
+                    )]
+                }
+            };
+
+            CsMember::Method {
+                attributes: vec![],
+                modifiers: mods,
+                return_ty: ret,
+                name: name.clone(),
+                params: ps,
+                body: cs_body,
+                source_span: Some(member_span(m)),
+            }
+        }
+        _ => CsMember::RawCode("// unexpected member".into()),
+    }
+}
+
+// ── Component-aware coroutine lowering ─────────────────────────
+
+/// Like `lower_coroutine` but routes through `lower_stmts_with_ctx`.
+fn lower_coroutine_with_ctx(
+    name: &str,
+    params: &[Param],
+    body: &Block,
+    ctx: &mut ComponentCtx,
+) -> CsMember {
+    let ps: Vec<CsParam> = params.iter().map(|p| CsParam {
+        ty: lower_type(&p.ty), name: p.name.clone(), default: None,
+    }).collect();
+
+    let cs_body = lower_stmts_with_ctx(&body.stmts, ctx, None);
+
+    CsMember::Method {
+        attributes: vec![],
+        modifiers: "private".into(),
+        return_ty: "System.Collections.IEnumerator".into(),
+        name: name.into(),
+        params: ps,
+        body: cs_body,
+        source_span: Some(body.span),
+    }
+}
+
 // ── Coroutine lowering ──────────────────────────────────────────
 
+/// Lower a coroutine outside component context (Class/Asset declarations).
+#[allow(dead_code)]
 fn lower_coroutine(
     name: &str,
     params: &[Param],
@@ -2264,10 +2336,16 @@ fn lower_stmt_with_ctx(
             }) {
                 let event_expr = rec.event_expr.clone();
                 let field = rec.field_name.clone();
-                vec![CsStmt::Expr(
-                    format!("{}.RemoveListener({})", event_expr, field),
-                    Some(*span),
-                )]
+                vec![
+                    CsStmt::Expr(
+                        format!("{}.RemoveListener({})", event_expr, field),
+                        Some(*span),
+                    ),
+                    CsStmt::Expr(
+                        format!("{} = null", field),
+                        Some(*span),
+                    ),
+                ]
             } else {
                 vec![CsStmt::Raw(
                     format!("/* error: unlisten '{}' — no matching manual listen found */", token),
@@ -2357,8 +2435,11 @@ fn cleanup_methods(records: &[SubscriptionRecord]) -> Vec<CsMember> {
     let mut methods = Vec::new();
 
     if !disable_records.is_empty() {
-        let body = disable_records.iter().map(|r| {
-            CsStmt::Expr(format!("{}.RemoveListener({})", r.event_expr, r.field_name), None)
+        let body = disable_records.iter().flat_map(|r| {
+            vec![
+                CsStmt::Expr(format!("{}.RemoveListener({})", r.event_expr, r.field_name), None),
+                CsStmt::Expr(format!("{} = null", r.field_name), None),
+            ]
         }).collect();
         methods.push(CsMember::Method {
             attributes: vec![],
@@ -2372,8 +2453,11 @@ fn cleanup_methods(records: &[SubscriptionRecord]) -> Vec<CsMember> {
     }
 
     if !destroy_records.is_empty() {
-        let body = destroy_records.iter().map(|r| {
-            CsStmt::Expr(format!("{}.RemoveListener({})", r.event_expr, r.field_name), None)
+        let body = destroy_records.iter().flat_map(|r| {
+            vec![
+                CsStmt::Expr(format!("{}.RemoveListener({})", r.event_expr, r.field_name), None),
+                CsStmt::Expr(format!("{} = null", r.field_name), None),
+            ]
         }).collect();
         methods.push(CsMember::Method {
             attributes: vec![],
@@ -2417,9 +2501,33 @@ const PRSM_INPUT_FIELD: &str = "_prsmInput";
 
 /// If `expr` is `input.action("ActionName")` (i.e. a call on `input` named
 /// `action` with one string literal arg), return `Some(action_name)`.
+/// Also handles the chained form `input.player("Map").action("Name")`.
 fn extract_input_action_name(expr: &Expr) -> Option<&str> {
     if let Expr::Call { receiver: Some(recv), name, args, .. } = expr {
         if name == "action" {
+            if let Some(arg) = args.first() {
+                if let Expr::StringLit(s, _) = &arg.value {
+                    // Direct form: input.action("Name")
+                    if let Expr::Ident(id, _) = recv.as_ref() {
+                        if id == "input" {
+                            return Some(s.as_str());
+                        }
+                    }
+                    // Chained form: input.player("Map").action("Name")
+                    if extract_input_player_name(recv).is_some() {
+                        return Some(s.as_str());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// If `expr` is `input.player("MapName")`, return `Some(map_name)`.
+fn extract_input_player_name(expr: &Expr) -> Option<&str> {
+    if let Expr::Call { receiver: Some(recv), name, args, .. } = expr {
+        if name == "player" {
             if let Expr::Ident(id, _) = recv.as_ref() {
                 if id == "input" {
                     if let Some(arg) = args.first() {
@@ -2436,35 +2544,50 @@ fn extract_input_action_name(expr: &Expr) -> Option<&str> {
 
 /// Try to lower `receiver.property_name` as New Input System sugar.
 ///
-/// Patterns handled:
+/// Patterns handled (direct form):
 /// - `input.action("Name").pressed`   → `_prsmInput.actions["Name"].WasPressedThisFrame()`
 /// - `input.action("Name").released`  → `_prsmInput.actions["Name"].WasReleasedThisFrame()`
 /// - `input.action("Name").held`      → `_prsmInput.actions["Name"].IsPressed()`
 /// - `input.action("Name").vector2`   → `_prsmInput.actions["Name"].ReadValue<UnityEngine.Vector2>()`
 /// - `input.action("Name").scalar`    → `_prsmInput.actions["Name"].ReadValue<float>()`
 /// - `input.action("Name").value`     → same as `vector2` (generic alias)
+///
+/// Player form (multiplayer):
+/// - `input.player("Map").action("Name").pressed` → `_prsmInput.actions["Map/Name"].WasPressedThisFrame()`
 fn try_lower_new_input_member(receiver: &Expr, prop: &str) -> Option<String> {
     let action_name = extract_input_action_name(receiver)?;
+
+    // Determine the action lookup key. For the player form, prefix with the map name.
+    let action_key = if let Expr::Call { receiver: Some(player_call), .. } = receiver {
+        if let Some(map_name) = extract_input_player_name(player_call) {
+            format!("{}/{}", map_name, action_name)
+        } else {
+            action_name.to_string()
+        }
+    } else {
+        action_name.to_string()
+    };
+
     let cs = match prop {
         "pressed" => format!(
             "{}.actions[\"{}\"].WasPressedThisFrame()",
-            PRSM_INPUT_FIELD, action_name
+            PRSM_INPUT_FIELD, action_key
         ),
         "released" => format!(
             "{}.actions[\"{}\"].WasReleasedThisFrame()",
-            PRSM_INPUT_FIELD, action_name
+            PRSM_INPUT_FIELD, action_key
         ),
         "held" => format!(
             "{}.actions[\"{}\"].IsPressed()",
-            PRSM_INPUT_FIELD, action_name
+            PRSM_INPUT_FIELD, action_key
         ),
         "vector2" | "value" => format!(
             "{}.actions[\"{}\"].ReadValue<UnityEngine.Vector2>()",
-            PRSM_INPUT_FIELD, action_name
+            PRSM_INPUT_FIELD, action_key
         ),
         "scalar" => format!(
             "{}.actions[\"{}\"].ReadValue<float>()",
-            PRSM_INPUT_FIELD, action_name
+            PRSM_INPUT_FIELD, action_key
         ),
         _ => return None,
     };

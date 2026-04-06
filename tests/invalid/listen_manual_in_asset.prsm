@@ -1,0 +1,8 @@
+// E083: listen manual is only valid inside a component
+asset Config : ScriptableObject {
+  func setup(button: Button) {
+    val token = listen button.onClick manual {
+      fire()
+    }
+  }
+}
