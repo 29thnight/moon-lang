@@ -224,6 +224,24 @@ impl Analyzer {
                     definition_id,
                 });
             }
+            Decl::Interface { name, name_span, .. } => {
+                let ty = PrismType::External(name.clone());
+                let definition_id = self.record_definition(
+                    name.clone(),
+                    name.clone(),
+                    HirDefinitionKind::Type,
+                    ty.clone(),
+                    false,
+                    *name_span,
+                );
+                self.scopes.define(Symbol {
+                    name: name.clone(),
+                    ty,
+                    kind: SymbolKind::Type,
+                    mutable: false,
+                    definition_id,
+                });
+            }
         }
     }
 
@@ -417,6 +435,9 @@ impl Analyzer {
                 }
                 self.current_decl_name = None;
                 // Attribute declarations are validated at parse time
+            }
+            Decl::Interface { .. } => {
+                // Interface members are signatures only — no body analysis needed.
             }
         }
     }

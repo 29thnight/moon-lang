@@ -776,6 +776,7 @@ fn declaration_completion_kind(kind: DeclarationKind) -> CompletionEntryKind {
         DeclarationKind::Component | DeclarationKind::Class | DeclarationKind::Asset | DeclarationKind::Attribute => CompletionEntryKind::Class,
         DeclarationKind::DataClass => CompletionEntryKind::Struct,
         DeclarationKind::Enum => CompletionEntryKind::Enum,
+        DeclarationKind::Interface => CompletionEntryKind::Class,
     }
 }
 

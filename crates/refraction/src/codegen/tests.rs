@@ -538,4 +538,28 @@ component PlayerHealth : MonoBehaviour {
         let output = compile(src);
         assert!(output.contains("ReadValue<float>()"), "should generate ReadValue<float>");
     }
+
+    // ── v3 interface declaration ──────────────────────────────────
+
+    #[test]
+    fn test_interface_declaration() {
+        let src = r#"interface IDamageable {
+  func takeDamage(amount: Int)
+  val isAlive: Bool
+}"#;
+        let output = compile(src);
+        assert!(output.contains("public interface IDamageable"), "should generate interface");
+        assert!(output.contains("void takeDamage(int amount);"), "should generate method signature");
+        assert!(output.contains("bool isAlive { get; }"), "should generate readonly property");
+    }
+
+    #[test]
+    fn test_interface_with_extends() {
+        let src = r#"interface IHealable : IDamageable {
+  func heal(amount: Int)
+}"#;
+        let output = compile(src);
+        assert!(output.contains("public interface IHealable : IDamageable"), "should generate extends");
+        assert!(output.contains("void heal(int amount);"), "should generate method");
+    }
 }

@@ -242,6 +242,37 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
             };
             (enum_class, extra_types)
         }
+        Decl::Interface { name, extends, members, .. } => {
+            let mut cs_members = Vec::new();
+            for member in members {
+                match member {
+                    InterfaceMember::Func { name: fn_name, params, return_ty, .. } => {
+                        let ret = return_ty.as_ref().map(|t| lower_type(t)).unwrap_or_else(|| "void".into());
+                        let ps: String = params.iter().map(|p| format!("{} {}", lower_type(&p.ty), p.name)).collect::<Vec<_>>().join(", ");
+                        cs_members.push(CsMember::RawCode(format!("{} {}({});", ret, fn_name, ps)));
+                    }
+                    InterfaceMember::Property { name: prop_name, ty, mutable, .. } => {
+                        let cs_ty = lower_type(ty);
+                        if *mutable {
+                            cs_members.push(CsMember::RawCode(format!("{} {} {{ get; set; }}", cs_ty, prop_name)));
+                        } else {
+                            cs_members.push(CsMember::RawCode(format!("{} {} {{ get; }}", cs_ty, prop_name)));
+                        }
+                    }
+                }
+            }
+            (
+                CsClass {
+                    attributes: vec![],
+                    modifiers: "public interface".into(),
+                    name: name.clone(),
+                    base_class: None,
+                    interfaces: extends.clone(),
+                    members: cs_members,
+                },
+                vec![],
+            )
+        }
         Decl::Attribute { name, fields, targets, .. } => {
             // attribute Foo(val x: Int) : Method, Property
             // → [AttributeUsage(AttributeTargets.Method | AttributeTargets.Property)]

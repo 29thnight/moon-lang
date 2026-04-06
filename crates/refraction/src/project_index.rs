@@ -17,6 +17,7 @@ pub enum DeclarationKind {
     DataClass,
     Enum,
     Attribute,
+    Interface,
 }
 
 impl DeclarationKind {
@@ -28,6 +29,7 @@ impl DeclarationKind {
             Self::DataClass => "data class",
             Self::Enum => "enum",
             Self::Attribute => "attribute",
+            Self::Interface => "interface",
         }
     }
 }
@@ -480,6 +482,29 @@ fn summarize_decl(path: &Path, decl: &Decl) -> (DeclarationSummary, Vec<IndexedS
             attribute_signature(name, fields, targets),
             summarize_param_members(path, name, fields),
             summarize_param_type_references(path, name, fields),
+            *name_span,
+        ),
+        Decl::Interface {
+            name,
+            name_span,
+            extends,
+            extends_spans,
+            ..
+        } => summarize_named_decl(
+            path,
+            name,
+            DeclarationKind::Interface,
+            None,
+            extends.clone(),
+            interface_signature(name, extends),
+            vec![],
+            summarize_decl_header_type_references(
+                path,
+                name,
+                None,
+                extends,
+                extends_spans,
+            ),
             *name_span,
         ),
     }
@@ -1181,6 +1206,14 @@ fn enum_signature(name: &str, params: &[crate::ast::EnumParam]) -> String {
             .collect::<Vec<_>>()
             .join(", ");
         format!("enum {}({})", name, params)
+    }
+}
+
+fn interface_signature(name: &str, extends: &[String]) -> String {
+    if extends.is_empty() {
+        format!("interface {}", name)
+    } else {
+        format!("interface {} : {}", name, extends.join(", "))
     }
 }
 

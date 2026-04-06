@@ -73,8 +73,9 @@ pub enum TokenKind {
     Data,           // context keyword: "data class"
     Enum,
 
-    // === Keywords: attribute ===
+    // === Keywords: attribute & interface ===
     Attribute,
+    Interface,
 
     // === Keywords: field qualifiers ===
     Serialize,
@@ -212,6 +213,7 @@ impl TokenKind {
                 | TokenKind::Data
                 | TokenKind::Enum
                 | TokenKind::Attribute
+                | TokenKind::Interface
                 | TokenKind::Serialize
                 | TokenKind::Require
                 | TokenKind::Optional
@@ -279,6 +281,7 @@ pub fn lookup_keyword(ident: &str) -> Option<TokenKind> {
         "data" => Some(TokenKind::Data),
         "enum" => Some(TokenKind::Enum),
         "attribute" => Some(TokenKind::Attribute),
+        "interface" => Some(TokenKind::Interface),
         "serialize" => Some(TokenKind::Serialize),
         "require" => Some(TokenKind::Require),
         "optional" => Some(TokenKind::Optional),

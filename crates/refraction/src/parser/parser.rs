@@ -192,8 +192,97 @@ impl Parser {
             TokenKind::Class => self.parse_class(),
             TokenKind::Enum => self.parse_enum(),
             TokenKind::Attribute => self.parse_attribute_decl(annotations),
-            _ => Err(self.error(format!("Expected declaration (component, asset, class, enum, attribute), found {:?}", self.peek()))),
+            TokenKind::Interface => self.parse_interface(),
+            _ => Err(self.error(format!("Expected declaration (component, asset, class, enum, attribute, interface), found {:?}", self.peek()))),
         }
+    }
+
+    fn parse_interface(&mut self) -> Result<Decl, ParseError> {
+        let start = self.peek_span();
+        self.advance(); // consume 'interface'
+        self.skip_newlines();
+
+        let (name, name_span) = self.expect_ident()?;
+
+        // Optional extends: interface Foo : Bar, Baz
+        let mut extends = Vec::new();
+        let mut extends_spans = Vec::new();
+        if self.eat(&TokenKind::Colon) {
+            let (ext_name, ext_span) = self.expect_ident()?;
+            extends.push(ext_name);
+            extends_spans.push(ext_span);
+            while self.eat(&TokenKind::Comma) {
+                let (ext_name, ext_span) = self.expect_ident()?;
+                extends.push(ext_name);
+                extends_spans.push(ext_span);
+            }
+        }
+
+        self.skip_newlines();
+        self.expect(&TokenKind::LBrace)?;
+        self.skip_newlines();
+
+        let mut members = Vec::new();
+        while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
+            self.skip_newlines();
+            if self.check(&TokenKind::RBrace) { break; }
+
+            let member_start = self.peek_span();
+            if self.check(&TokenKind::Func) {
+                self.advance(); // consume 'func'
+                let (fn_name, fn_name_span) = self.expect_ident()?;
+                self.expect(&TokenKind::LParen)?;
+                let params = if self.check(&TokenKind::RParen) {
+                    Vec::new()
+                } else {
+                    self.parse_param_list()?
+                };
+                self.expect(&TokenKind::RParen)?;
+                let return_ty = if self.eat(&TokenKind::Colon) {
+                    Some(self.parse_type()?)
+                } else {
+                    None
+                };
+                members.push(InterfaceMember::Func {
+                    name: fn_name,
+                    name_span: fn_name_span,
+                    params,
+                    return_ty,
+                    span: Span { start: member_start.start, end: self.peek_span().end },
+                });
+            } else if self.check(&TokenKind::Val) || self.check(&TokenKind::Var) {
+                let mutable = self.peek() == &TokenKind::Var;
+                self.advance(); // consume val/var
+                let (prop_name, prop_name_span) = self.expect_ident()?;
+                self.expect(&TokenKind::Colon)?;
+                let ty = self.parse_type()?;
+                members.push(InterfaceMember::Property {
+                    name: prop_name,
+                    name_span: prop_name_span,
+                    ty,
+                    mutable,
+                    span: Span { start: member_start.start, end: self.peek_span().end },
+                });
+            } else {
+                return Err(self.error(format!(
+                    "Expected 'func', 'val', or 'var' in interface body, found {:?}",
+                    self.peek()
+                )));
+            }
+            self.expect_newline_or_eof();
+            self.skip_newlines();
+        }
+
+        self.expect(&TokenKind::RBrace)?;
+
+        Ok(Decl::Interface {
+            name,
+            name_span,
+            extends,
+            extends_spans,
+            members,
+            span: Span { start: start.start, end: self.peek_span().end },
+        })
     }
 
     fn parse_component(&mut self) -> Result<Decl, ParseError> {

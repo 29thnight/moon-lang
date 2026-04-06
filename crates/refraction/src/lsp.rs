@@ -1664,6 +1664,7 @@ fn collect_used_namespaces_for_decl(decl: &Decl, used_namespaces: &mut HashSet<S
         Decl::DataClass { fields, .. } | Decl::Attribute { fields, .. } => {
             collect_used_namespaces_for_params(fields, used_namespaces);
         }
+        Decl::Interface { .. } => {}
         Decl::Enum { params, entries, .. } => {
             for param in params {
                 collect_used_namespaces_for_type_ref(&param.ty, used_namespaces);
@@ -2079,7 +2080,7 @@ fn decl_contains_intrinsic_code(decl: &Decl) -> bool {
         Decl::Component { members, .. }
         | Decl::Asset { members, .. }
         | Decl::Class { members, .. } => members.iter().any(member_contains_intrinsic_code),
-        Decl::DataClass { .. } | Decl::Enum { .. } | Decl::Attribute { .. } => false,
+        Decl::DataClass { .. } | Decl::Enum { .. } | Decl::Attribute { .. } | Decl::Interface { .. } => false,
     }
 }
 
@@ -2304,7 +2305,7 @@ fn decl_members(decl: &Decl) -> Option<&[Member]> {
         Decl::Component { members, .. }
         | Decl::Asset { members, .. }
         | Decl::Class { members, .. } => Some(members.as_slice()),
-        Decl::DataClass { .. } | Decl::Enum { .. } | Decl::Attribute { .. } => None,
+        Decl::DataClass { .. } | Decl::Enum { .. } | Decl::Attribute { .. } | Decl::Interface { .. } => None,
     }
 }
 
@@ -2315,7 +2316,8 @@ fn decl_start_position(decl: &Decl) -> Position {
         | Decl::Class { span, .. }
         | Decl::DataClass { span, .. }
         | Decl::Enum { span, .. }
-        | Decl::Attribute { span, .. } => span.start,
+        | Decl::Attribute { span, .. }
+        | Decl::Interface { span, .. } => span.start,
     }
 }
 
@@ -3486,6 +3488,7 @@ fn declaration_kind_name(declaration: &DeclarationSummary) -> &'static str {
         crate::project_index::DeclarationKind::DataClass => "data class",
         crate::project_index::DeclarationKind::Enum => "enum",
         crate::project_index::DeclarationKind::Attribute => "attribute",
+        crate::project_index::DeclarationKind::Interface => "interface",
     }
 }
 

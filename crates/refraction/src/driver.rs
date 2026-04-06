@@ -323,6 +323,7 @@ fn collect_project_types(files: &[PathBuf]) -> HashMap<String, crate::semantic::
                 crate::semantic::types::PrismType::Class(decl.name.clone())
             }
             DeclarationKind::Enum => crate::semantic::types::PrismType::Enum(decl.name.clone()),
+            DeclarationKind::Interface => crate::semantic::types::PrismType::External(decl.name.clone()),
         };
         known_types.insert(decl.name.clone(), ty);
     }

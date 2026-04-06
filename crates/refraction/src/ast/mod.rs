@@ -74,6 +74,34 @@ pub enum Decl {
         targets: Vec<String>,  // e.g. ["Method", "Property"]. Empty = All
         span: Span,
     },
+    /// `interface Name [: SuperInterfaces] { func ...; val ...; }` (since Language 3)
+    Interface {
+        name: String,
+        name_span: Span,
+        extends: Vec<String>,
+        extends_spans: Vec<Span>,
+        members: Vec<InterfaceMember>,
+        span: Span,
+    },
+}
+
+/// A member of an interface declaration — method signature or property.
+#[derive(Debug, Clone)]
+pub enum InterfaceMember {
+    Func {
+        name: String,
+        name_span: Span,
+        params: Vec<Param>,
+        return_ty: Option<TypeRef>,
+        span: Span,
+    },
+    Property {
+        name: String,
+        name_span: Span,
+        ty: TypeRef,
+        mutable: bool, // val = false, var = true
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone)]
