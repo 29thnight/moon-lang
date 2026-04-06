@@ -1,0 +1,4 @@
+// E101: 'get' is a reserved built-in method name
+component Foo : MonoBehaviour {
+    func get() {}
+}

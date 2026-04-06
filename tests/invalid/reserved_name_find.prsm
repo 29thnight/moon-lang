@@ -1,0 +1,4 @@
+// E101: 'find' is a reserved built-in method name
+component Foo : MonoBehaviour {
+    func find() {}
+}
