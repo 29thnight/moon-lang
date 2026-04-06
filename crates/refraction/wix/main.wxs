@@ -18,7 +18,7 @@
         Manufacturer='PrSM Contributors'
         Language='1033'
         Codepage='1252'
-        Version='0.1.0'>
+        Version='1.0.0'>
 
         <Package Id='*'
             Keywords='Installer'
