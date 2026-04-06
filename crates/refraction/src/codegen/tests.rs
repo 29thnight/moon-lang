@@ -631,4 +631,152 @@ component PlayerHealth : MonoBehaviour {
         assert!(output.contains("getStats().hp"), "single binding should inline without temp variable");
         assert!(!output.contains("_prsm_d"), "should NOT have temp variable for single binding");
     }
+
+    // ── v4 Phase 1 tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_try_catch_finally() {
+        let src = r#"component Foo : MonoBehaviour {
+  func f() {
+    try {
+      val x = 1
+    } catch (e: Exception) {
+      log(e)
+    } finally {
+      cleanup()
+    }
+  }
+}"#;
+        let output = compile(src);
+        assert!(output.contains("try"), "should contain try");
+        assert!(output.contains("catch (Exception e)"), "should contain catch with type");
+        assert!(output.contains("finally"), "should contain finally");
+    }
+
+    #[test]
+    fn test_throw_statement() {
+        let src = r#"component Foo : MonoBehaviour {
+  func f() {
+    throw ArgumentException("bad")
+  }
+}"#;
+        let output = compile(src);
+        assert!(output.contains("throw new ArgumentException"), "throw should add 'new' keyword");
+    }
+
+    #[test]
+    fn test_static_func() {
+        let src = r#"class MathHelper {
+  static func lerp(a: Float, b: Float, t: Float): Float = a + (b - a) * t
+}"#;
+        let output = compile(src);
+        assert!(output.contains("static"), "should contain static modifier");
+        assert!(output.contains("float"), "should contain float return type");
+    }
+
+    #[test]
+    fn test_static_val_field() {
+        let src = r#"class MathHelper {
+  static val PI: Float = 3.14
+}"#;
+        let output = compile(src);
+        assert!(output.contains("static"), "should contain static");
+        assert!(output.contains("readonly"), "static val should be readonly");
+    }
+
+    #[test]
+    fn test_const_field() {
+        let src = r#"class Config {
+  const MAX: Int = 100
+}"#;
+        let output = compile(src);
+        assert!(output.contains("const"), "should contain const modifier");
+        assert!(output.contains("int"), "should map Int to int");
+        assert!(output.contains("100"), "should contain value");
+    }
+
+    #[test]
+    fn test_raw_string_literal() {
+        let src = r#"component Foo : MonoBehaviour {
+  func f() {
+    val json = """
+hello world
+"""
+  }
+}"#;
+        let output = compile(src);
+        assert!(output.contains("hello world"), "raw string content should be preserved");
+    }
+
+    #[test]
+    fn test_in_operator_range() {
+        let src = r#"component Foo : MonoBehaviour {
+  func f() {
+    val x = 5
+    if x in 1..10 {
+      log("in range")
+    }
+  }
+}"#;
+        let output = compile(src);
+        assert!(output.contains(">=") && output.contains("<="), "in range should lower to >= and <=");
+    }
+
+    #[test]
+    fn test_in_operator_collection() {
+        let src = r#"component Foo : MonoBehaviour {
+  func f() {
+    val name = "Alice"
+    if name in names {
+      log("found")
+    }
+  }
+}"#;
+        let output = compile(src);
+        assert!(output.contains(".Contains("), "in collection should lower to .Contains()");
+    }
+
+    #[test]
+    fn test_or_pattern_in_when() {
+        let src = r#"component Foo : MonoBehaviour {
+  func f() {
+    val x = 1
+    when x {
+      1, 2 => log("one or two")
+      else => log("other")
+    }
+  }
+}"#;
+        let output = compile(src);
+        assert!(output.contains("case 1:"), "should contain case 1:");
+        assert!(output.contains("case 2:"), "should contain case 2:");
+    }
+
+    #[test]
+    fn test_range_pattern_in_when() {
+        let src = r#"component Foo : MonoBehaviour {
+  func f() {
+    val score = 85
+    when score {
+      in 90..100 => log("A")
+      in 80..89 => log("B")
+      else => log("F")
+    }
+  }
+}"#;
+        let output = compile(src);
+        assert!(output.contains(">=") && output.contains("<="), "range pattern should use >= and <=");
+    }
+
+    #[test]
+    fn test_null_coalesce_assign() {
+        let src = r#"component Foo : MonoBehaviour {
+  func f() {
+    var x: Int? = null
+    x ?:= 42
+  }
+}"#;
+        let output = compile(src);
+        assert!(output.contains("??="), "?:= should lower to ??=");
+    }
 }

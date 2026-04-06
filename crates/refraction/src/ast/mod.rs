@@ -86,6 +86,13 @@ pub enum Decl {
         members: Vec<InterfaceMember>,
         span: Span,
     },
+    /// `typealias Name = Type` (since Language 4)
+    TypeAlias {
+        name: String,
+        name_span: Span,
+        target: TypeRef,
+        span: Span,
+    },
 }
 
 /// A member of an interface declaration — method signature or property.
@@ -144,6 +151,7 @@ pub enum Member {
     },
     Field {
         visibility: Visibility,
+        is_static: bool,
         mutability: Mutability,
         name: String,
         name_span: Span,
@@ -177,6 +185,7 @@ pub enum Member {
     },
     Func {
         visibility: Visibility,
+        is_static: bool,
         is_override: bool,
         name: String,
         name_span: Span,
@@ -327,6 +336,27 @@ pub enum Stmt {
     Continue {
         span: Span,
     },
+    /// `try { } catch (e: Type) { } finally { }` (since Language 4)
+    Try {
+        try_block: Block,
+        catches: Vec<CatchClause>,
+        finally_block: Option<Block>,
+        span: Span,
+    },
+    /// `throw expr` (since Language 4)
+    Throw {
+        expr: Expr,
+        span: Span,
+    },
+}
+
+/// A catch clause: `catch (name: Type) { body }`
+#[derive(Debug, Clone)]
+pub struct CatchClause {
+    pub name: String,
+    pub ty: TypeRef,
+    pub body: Block,
+    pub span: Span,
 }
 
 #[derive(Debug, Clone)]
@@ -355,6 +385,17 @@ pub enum WhenPattern {
         path: Vec<String>,
         /// Bound variable names from payload, e.g. ["target"]
         bindings: Vec<String>,
+        span: Span,
+    },
+    /// v4: OR pattern — multiple patterns separated by comma
+    Or {
+        patterns: Vec<WhenPattern>,
+        span: Span,
+    },
+    /// v4: Range pattern — `in start..end`
+    Range {
+        start: Expr,
+        end: Expr,
         span: Span,
     },
 }
@@ -608,6 +649,7 @@ pub enum AssignOp {
     StarAssign,
     SlashAssign,
     ModAssign,
+    NullCoalesceAssign,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -625,6 +667,7 @@ pub enum BinOp {
     GtEq,
     And,
     Or,
+    In,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -414,6 +414,23 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                 vec![],
             )
         }
+        Decl::TypeAlias { name, target, .. } => {
+            // typealias lowers to a C# `using Name = FullType;` directive.
+            // We emit an empty class with a using alias marker.
+            // The using is added by the caller via extra_types.
+            (
+                CsClass {
+                    attributes: vec![],
+                    modifiers: String::new(),
+                    name: format!("__typealias_{}", name),
+                    base_class: None,
+                    interfaces: vec![],
+                    where_clauses: vec![],
+                    members: vec![CsMember::RawCode(format!("// typealias {} = {}", name, lower_type(target)))],
+                },
+                vec![],
+            )
+        }
     }
 }
 
@@ -792,16 +809,29 @@ fn lower_field_member(m: &Member) -> Vec<CsMember> {
             }
             result
         }
-        Member::Field { visibility, mutability, name, ty, init, .. } => {
+        Member::Field { visibility, is_static, mutability, name, ty, init, .. } => {
             let cs_ty = ty.as_ref().map(|t| lower_type(t)).unwrap_or("var".into());
             let init_str = init.as_ref().map(|e| lower_expr(e));
+            let vis = lower_visibility(*visibility);
+            let static_prefix = if *is_static { "static " } else { "" };
 
             // const → C# const (no backing field pattern)
             if *mutability == Mutability::Const {
-                let vis = lower_visibility(*visibility);
                 return vec![CsMember::Field {
                     attributes: vec![],
-                    modifiers: format!("{} const", vis),
+                    modifiers: format!("{} {}const", vis, static_prefix).trim().to_string(),
+                    ty: cs_ty,
+                    name: name.clone(),
+                    init: init_str,
+                }];
+            }
+
+            // static val → C# static readonly field (no backing+property pattern)
+            if *is_static {
+                let readonly_mod = if *mutability == Mutability::Val || *mutability == Mutability::Fixed { "readonly " } else { "" };
+                return vec![CsMember::Field {
+                    attributes: vec![],
+                    modifiers: format!("{} static {}{}", vis, readonly_mod, "").trim().to_string(),
                     ty: cs_ty,
                     name: name.clone(),
                     init: init_str,
@@ -809,7 +839,7 @@ fn lower_field_member(m: &Member) -> Vec<CsMember> {
             }
 
             let backing = format!("_{}", name);
-            let getter_vis = lower_visibility(*visibility);
+            let getter_vis = vis;
 
             let mut result = vec![
                 CsMember::Field {
@@ -1181,13 +1211,16 @@ fn lifecycle_method_name(kind: LifecycleKind) -> &'static str {
 
 fn lower_func_member(m: &Member, callable_signatures: &HashMap<String, CallableSignature>) -> CsMember {
     match m {
-        Member::Func { visibility, is_override, name, type_params, where_clauses, params, return_ty, body, .. } => {
+        Member::Func { visibility, is_static, is_override, name, type_params, where_clauses, params, return_ty, body, .. } => {
             let ret = return_ty.as_ref().map(|t| lower_type(t)).unwrap_or("void".into());
             let ps: Vec<CsParam> = params.iter().map(|p| CsParam {
                 ty: lower_type(&p.ty), name: p.name.clone(), default: None,
             }).collect();
 
             let mut mods = lower_visibility(*visibility);
+            if *is_static {
+                mods = format!("{} static", mods);
+            }
             if *is_override {
                 mods = format!("{} override", mods);
             }
@@ -1284,13 +1317,16 @@ fn lower_intrinsic_coroutine(name: &str, params: &[Param], code: &str, span: Spa
 /// component-level `ComponentCtx`.
 fn lower_func_member_with_ctx(m: &Member, ctx: &mut ComponentCtx) -> CsMember {
     match m {
-        Member::Func { visibility, is_override, name, type_params, where_clauses, params, return_ty, body, .. } => {
+        Member::Func { visibility, is_static, is_override, name, type_params, where_clauses, params, return_ty, body, .. } => {
             let ret = return_ty.as_ref().map(|t| lower_type(t)).unwrap_or("void".into());
             let ps: Vec<CsParam> = params.iter().map(|p| CsParam {
                 ty: lower_type(&p.ty), name: p.name.clone(), default: None,
             }).collect();
 
             let mut mods = lower_visibility(*visibility);
+            if *is_static {
+                mods = format!("{} static", mods);
+            }
             if *is_override {
                 mods = format!("{} override", mods);
             }
@@ -1406,7 +1442,9 @@ fn stmt_span(stmt: &Stmt) -> Span {
         | Stmt::DestructureVal { span, .. }
         | Stmt::IntrinsicBlock { span, .. }
         | Stmt::Break { span, .. }
-        | Stmt::Continue { span, .. } => *span,
+        | Stmt::Continue { span, .. }
+        | Stmt::Try { span, .. }
+        | Stmt::Throw { span, .. } => *span,
     }
 }
 
@@ -1492,6 +1530,7 @@ fn lower_stmt_with_context(
                 AssignOp::StarAssign => "*=",
                 AssignOp::SlashAssign => "/=",
                 AssignOp::ModAssign => "%=",
+                AssignOp::NullCoalesceAssign => "??=",
             };
             CsStmt::Assignment {
                 target: lower_expr_with_expected_type(target, None, callable_signatures),
@@ -1564,6 +1603,25 @@ fn lower_stmt_with_context(
                                 });
                             }
                             format!("case {} {}:", type_name, tmp)
+                        }
+                        WhenPattern::Or { patterns, .. } => {
+                            // OR pattern → multiple case labels for fall-through
+                            let mut label = String::new();
+                            for (i, p) in patterns.iter().enumerate() {
+                                if i > 0 { label.push_str("\n"); }
+                                match p {
+                                    WhenPattern::Expression(expr) => label.push_str(&format!("case {}:", lower_expr_with_expected_type(expr, None, callable_signatures))),
+                                    WhenPattern::Is(ty) => label.push_str(&format!("case {} _:", lower_type(ty))),
+                                    WhenPattern::Binding { path, .. } => label.push_str(&format!("case {} _:", path.join("."))),
+                                    _ => label.push_str("default:"),
+                                }
+                            }
+                            label
+                        }
+                        WhenPattern::Range { start: range_start, end: range_end, .. } => {
+                            // Range pattern → case with when guard
+                            format!("case var _prsm_rv when _prsm_rv >= {} && _prsm_rv <= {}:",
+                                lower_expr(range_start), lower_expr(range_end))
                         }
                     };
                     let body: Vec<CsStmt> = match &b.body {
@@ -1645,6 +1703,35 @@ fn lower_stmt_with_context(
                             });
                         }
                         WhenPattern::Is(_) => {}
+                        WhenPattern::Or { patterns, .. } => {
+                            // OR patterns in subject-less when → OR the conditions
+                            let conds: Vec<String> = patterns.iter().filter_map(|p| {
+                                if let WhenPattern::Expression(e) = p {
+                                    Some(lower_expr_with_expected_type(e, None, callable_signatures))
+                                } else {
+                                    None
+                                }
+                            }).collect();
+                            if !conds.is_empty() {
+                                let combined_cond = conds.join(" || ");
+                                result = Some(CsStmt::If {
+                                    cond: combined_cond,
+                                    then_body: body,
+                                    else_body: result.map(|r| vec![r]),
+                                    source_span: Some(b.span),
+                                });
+                            }
+                        }
+                        WhenPattern::Range { start: range_start, end: range_end, .. } => {
+                            // Range in subject-less when — not typical, but handle gracefully
+                            let cond_str = format!("/* range in */ {} <= {} /* not applicable */", lower_expr(range_start), lower_expr(range_end));
+                            result = Some(CsStmt::If {
+                                cond: cond_str,
+                                then_body: body,
+                                else_body: result.map(|r| vec![r]),
+                                source_span: Some(b.span),
+                            });
+                        }
                     }
                 }
                 result.unwrap_or(CsStmt::Raw("// empty when".into(), source_span))
@@ -1777,6 +1864,36 @@ fn lower_stmt_with_context(
         Stmt::Continue { .. } => CsStmt::Continue(source_span),
         Stmt::DestructureVal { pattern, init, .. } => {
             lower_destructure_val(pattern, init, source_span)
+        }
+        Stmt::Try { try_block, catches, finally_block, .. } => {
+            let try_body: Vec<CsStmt> = try_block.stmts.iter()
+                .map(|s| lower_stmt_with_context(s, callable_signatures, expected_return_ty))
+                .collect();
+            let cs_catches: Vec<CsCatchClause> = catches.iter()
+                .map(|c| CsCatchClause {
+                    exception_type: lower_type(&c.ty),
+                    name: c.name.clone(),
+                    body: c.body.stmts.iter()
+                        .map(|s| lower_stmt_with_context(s, callable_signatures, expected_return_ty))
+                        .collect(),
+                })
+                .collect();
+            let finally_body = finally_block.as_ref().map(|fb|
+                fb.stmts.iter()
+                    .map(|s| lower_stmt_with_context(s, callable_signatures, expected_return_ty))
+                    .collect()
+            );
+            CsStmt::TryCatch {
+                try_body,
+                catches: cs_catches,
+                finally_body,
+                source_span,
+            }
+        }
+        Stmt::Throw { expr, .. } => {
+            // PrSM: throw Exception("msg") → C#: throw new Exception("msg")
+            let expr_str = lower_expr_with_expected_type(expr, None, callable_signatures);
+            CsStmt::Throw(format!("new {}", expr_str), source_span)
         }
     }
 }
@@ -1943,6 +2060,31 @@ fn cs_stmt_to_lines(stmt: &CsStmt, indent: usize) -> Vec<String> {
             }
             lines
         }
+        CsStmt::TryCatch { try_body, catches, finally_body, .. } => {
+            let mut lines = vec![format!("{}try", pad), format!("{}{{", pad)];
+            for nested in try_body {
+                lines.extend(cs_stmt_to_lines(nested, indent + 1));
+            }
+            lines.push(format!("{}}}", pad));
+            for c in catches {
+                lines.push(format!("{}catch ({} {})", pad, c.exception_type, c.name));
+                lines.push(format!("{}{{", pad));
+                for nested in &c.body {
+                    lines.extend(cs_stmt_to_lines(nested, indent + 1));
+                }
+                lines.push(format!("{}}}", pad));
+            }
+            if let Some(finally_stmts) = finally_body {
+                lines.push(format!("{}finally", pad));
+                lines.push(format!("{}{{", pad));
+                for nested in finally_stmts {
+                    lines.extend(cs_stmt_to_lines(nested, indent + 1));
+                }
+                lines.push(format!("{}}}", pad));
+            }
+            lines
+        }
+        CsStmt::Throw(expr, _) => vec![format!("{}throw {};", pad, expr)],
     }
 }
 
@@ -1986,6 +2128,21 @@ fn lower_expr_with_expected_type(
         Expr::Ident(name, _) => map_sugar_ident(name),
         Expr::This(_) => "this".into(),
         Expr::Binary { left, op, right, .. } => {
+            if *op == BinOp::In {
+                // `x in range` or `x in collection`
+                let lhs = lower_expr_with_expected_type(left, None, callable_signatures);
+                return match right.as_ref() {
+                    Expr::Range { start: range_start, end: range_end, .. } => {
+                        let lo = lower_expr_with_expected_type(range_start, None, callable_signatures);
+                        let hi = lower_expr_with_expected_type(range_end, None, callable_signatures);
+                        format!("{} >= {} && {} <= {}", lhs, lo, lhs, hi)
+                    }
+                    _ => {
+                        let rhs = lower_expr_with_expected_type(right, None, callable_signatures);
+                        format!("{}.Contains({})", rhs, lhs)
+                    }
+                };
+            }
             let op_str = match op {
                 BinOp::Add => "+", BinOp::Sub => "-", BinOp::Mul => "*",
                 BinOp::Div => "/", BinOp::Mod => "%",
@@ -1993,6 +2150,7 @@ fn lower_expr_with_expected_type(
                 BinOp::Lt => "<", BinOp::Gt => ">",
                 BinOp::LtEq => "<=", BinOp::GtEq => ">=",
                 BinOp::And => "&&", BinOp::Or => "||",
+                BinOp::In => unreachable!("handled above"),
             };
             format!(
                 "{} {} {}",
@@ -2115,6 +2273,17 @@ fn lower_expr_with_expected_type(
                         WhenPattern::Is(ty) => format!("{} _", lower_type(ty)),
                         WhenPattern::Else => "_".into(),
                         WhenPattern::Binding { path, .. } => format!("{} _", path.join(".")),
+                        WhenPattern::Or { patterns, .. } => {
+                            patterns.iter().filter_map(|p| match p {
+                                WhenPattern::Expression(e) => Some(lower_expr_with_expected_type(e, None, callable_signatures)),
+                                WhenPattern::Is(ty) => Some(format!("{} _", lower_type(ty))),
+                                WhenPattern::Binding { path, .. } => Some(format!("{} _", path.join("."))),
+                                _ => None,
+                            }).collect::<Vec<_>>().join(" or ")
+                        }
+                        WhenPattern::Range { start: range_start, end: range_end, .. } => {
+                            format!(">= {} and <= {}", lower_expr(range_start), lower_expr(range_end))
+                        }
                     };
                     let value = match &branch.body {
                         WhenBody::Expr(expr) => lower_expr_with_expected_type(expr, expected_type, callable_signatures),
@@ -2152,7 +2321,8 @@ fn lower_expr_with_expected_type(
                             value,
                             result
                         ),
-                        WhenPattern::Is(_) | WhenPattern::Binding { .. } => result,
+                        WhenPattern::Is(_) | WhenPattern::Binding { .. }
+                        | WhenPattern::Or { .. } | WhenPattern::Range { .. } => result,
                     };
                 }
                 result

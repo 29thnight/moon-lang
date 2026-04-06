@@ -240,5 +240,32 @@ fn emit_stmt(out: &mut String, stmt: &CsStmt, indent: usize) {
                 emit_stmt(out, s, indent);
             }
         }
+        CsStmt::TryCatch { try_body, catches, finally_body, .. } => {
+            out.push_str(&format!("{}try\n", pad));
+            out.push_str(&format!("{}{{\n", pad));
+            for s in try_body {
+                emit_stmt(out, s, indent + 1);
+            }
+            out.push_str(&format!("{}}}\n", pad));
+            for c in catches {
+                out.push_str(&format!("{}catch ({} {})\n", pad, c.exception_type, c.name));
+                out.push_str(&format!("{}{{\n", pad));
+                for s in &c.body {
+                    emit_stmt(out, s, indent + 1);
+                }
+                out.push_str(&format!("{}}}\n", pad));
+            }
+            if let Some(finally_stmts) = finally_body {
+                out.push_str(&format!("{}finally\n", pad));
+                out.push_str(&format!("{}{{\n", pad));
+                for s in finally_stmts {
+                    emit_stmt(out, s, indent + 1);
+                }
+                out.push_str(&format!("{}}}\n", pad));
+            }
+        }
+        CsStmt::Throw(expr, _) => {
+            out.push_str(&format!("{}throw {};\n", pad, expr));
+        }
     }
 }

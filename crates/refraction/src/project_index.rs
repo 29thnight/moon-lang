@@ -507,6 +507,20 @@ fn summarize_decl(path: &Path, decl: &Decl) -> (DeclarationSummary, Vec<IndexedS
             ),
             *name_span,
         ),
+        Decl::TypeAlias { name, name_span, target, .. } => {
+            let sig = format!("typealias {} = {}", name, type_ref_signature(target));
+            summarize_named_decl(
+                path,
+                name,
+                DeclarationKind::Class,
+                None,
+                vec![],
+                sig,
+                vec![],
+                vec![],
+                *name_span,
+            )
+        }
     }
 }
 
@@ -772,6 +786,19 @@ fn collect_stmt_type_references(
             collect_expr_type_references(path, container_name, init, references);
         }
         Stmt::StopAll { .. } | Stmt::IntrinsicBlock { .. } | Stmt::Break { .. } | Stmt::Continue { .. } | Stmt::Unlisten { .. } => {}
+        Stmt::Try { try_block, catches, finally_block, .. } => {
+            collect_block_type_references(path, container_name, try_block, references);
+            for c in catches {
+                collect_type_references(path, container_name, &c.ty, references);
+                collect_block_type_references(path, container_name, &c.body, references);
+            }
+            if let Some(fb) = finally_block {
+                collect_block_type_references(path, container_name, fb, references);
+            }
+        }
+        Stmt::Throw { expr, .. } => {
+            collect_expr_type_references(path, container_name, expr, references);
+        }
     }
 }
 
@@ -798,6 +825,19 @@ fn collect_when_branch_type_references(
         WhenPattern::Is(ty) => collect_type_references(path, container_name, ty, references),
         WhenPattern::Binding { .. } => {} // no type references to collect from binding names
         WhenPattern::Else => {}
+        WhenPattern::Or { patterns, .. } => {
+            for p in patterns {
+                match p {
+                    WhenPattern::Expression(e) => collect_expr_type_references(path, container_name, e, references),
+                    WhenPattern::Is(ty) => collect_type_references(path, container_name, ty, references),
+                    _ => {}
+                }
+            }
+        }
+        WhenPattern::Range { start, end, .. } => {
+            collect_expr_type_references(path, container_name, start, references);
+            collect_expr_type_references(path, container_name, end, references);
+        }
     }
 
     match &branch.body {
@@ -1228,6 +1268,23 @@ fn enum_signature(name: &str, params: &[crate::ast::EnumParam]) -> String {
             .collect::<Vec<_>>()
             .join(", ");
         format!("enum {}({})", name, params)
+    }
+}
+
+fn type_ref_signature(ty: &TypeRef) -> String {
+    match ty {
+        TypeRef::Simple { name, nullable, .. } => {
+            if *nullable { format!("{}?", name) } else { name.clone() }
+        }
+        TypeRef::Generic { name, type_args, nullable, .. } => {
+            let args: Vec<String> = type_args.iter().map(type_ref_signature).collect();
+            let base = format!("{}<{}>", name, args.join(", "));
+            if *nullable { format!("{}?", base) } else { base }
+        }
+        TypeRef::Qualified { qualifier, name, nullable, .. } => {
+            let base = format!("{}.{}", qualifier, name);
+            if *nullable { format!("{}?", base) } else { base }
+        }
     }
 }
 

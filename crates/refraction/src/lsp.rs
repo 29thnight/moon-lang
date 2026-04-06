@@ -1665,6 +1665,9 @@ fn collect_used_namespaces_for_decl(decl: &Decl, used_namespaces: &mut HashSet<S
             collect_used_namespaces_for_params(fields, used_namespaces);
         }
         Decl::Interface { .. } => {}
+        Decl::TypeAlias { target, .. } => {
+            collect_used_namespaces_for_type_ref(target, used_namespaces);
+        }
         Decl::Enum { params, entries, .. } => {
             for param in params {
                 collect_used_namespaces_for_type_ref(&param.ty, used_namespaces);
@@ -1861,6 +1864,19 @@ fn collect_used_namespaces_for_stmt(stmt: &Stmt, used_namespaces: &mut HashSet<S
         | Stmt::IntrinsicBlock { .. }
         | Stmt::Break { .. }
         | Stmt::Continue { .. } => {}
+        Stmt::Try { try_block, catches, finally_block, .. } => {
+            collect_used_namespaces_for_block(try_block, used_namespaces);
+            for c in catches {
+                collect_used_namespaces_for_type_ref(&c.ty, used_namespaces);
+                collect_used_namespaces_for_block(&c.body, used_namespaces);
+            }
+            if let Some(fb) = finally_block {
+                collect_used_namespaces_for_block(fb, used_namespaces);
+            }
+        }
+        Stmt::Throw { expr, .. } => {
+            collect_used_namespaces_for_expr(expr, used_namespaces);
+        }
     }
 }
 
@@ -1876,6 +1892,19 @@ fn collect_used_namespaces_for_when_branch(
             if let Some(type_name) = path.first() {
                 mark_namespace_for_known_type_name(type_name, used_namespaces);
             }
+        }
+        WhenPattern::Or { patterns, .. } => {
+            for p in patterns {
+                match p {
+                    WhenPattern::Expression(e) => collect_used_namespaces_for_expr(e, used_namespaces),
+                    WhenPattern::Is(ty) => collect_used_namespaces_for_type_ref(ty, used_namespaces),
+                    _ => {}
+                }
+            }
+        }
+        WhenPattern::Range { start, end, .. } => {
+            collect_used_namespaces_for_expr(start, used_namespaces);
+            collect_used_namespaces_for_expr(end, used_namespaces);
         }
     }
 
@@ -2083,7 +2112,7 @@ fn decl_contains_intrinsic_code(decl: &Decl) -> bool {
         Decl::Component { members, .. }
         | Decl::Asset { members, .. }
         | Decl::Class { members, .. } => members.iter().any(member_contains_intrinsic_code),
-        Decl::DataClass { .. } | Decl::Enum { .. } | Decl::Attribute { .. } | Decl::Interface { .. } => false,
+        Decl::DataClass { .. } | Decl::Enum { .. } | Decl::Attribute { .. } | Decl::Interface { .. } | Decl::TypeAlias { .. } => false,
     }
 }
 
@@ -2160,6 +2189,12 @@ fn stmt_contains_intrinsic_code(stmt: &Stmt) -> bool {
         | Stmt::Unlisten { .. }
         | Stmt::Break { .. }
         | Stmt::Continue { .. } => false,
+        Stmt::Try { try_block, catches, finally_block, .. } => {
+            block_contains_intrinsic_code(try_block)
+                || catches.iter().any(|c| block_contains_intrinsic_code(&c.body))
+                || finally_block.as_ref().is_some_and(block_contains_intrinsic_code)
+        }
+        Stmt::Throw { expr, .. } => expr_contains_intrinsic_code(expr),
     }
 }
 
@@ -2309,7 +2344,7 @@ fn decl_members(decl: &Decl) -> Option<&[Member]> {
         Decl::Component { members, .. }
         | Decl::Asset { members, .. }
         | Decl::Class { members, .. } => Some(members.as_slice()),
-        Decl::DataClass { .. } | Decl::Enum { .. } | Decl::Attribute { .. } | Decl::Interface { .. } => None,
+        Decl::DataClass { .. } | Decl::Enum { .. } | Decl::Attribute { .. } | Decl::Interface { .. } | Decl::TypeAlias { .. } => None,
     }
 }
 
@@ -2321,7 +2356,8 @@ fn decl_start_position(decl: &Decl) -> Position {
         | Decl::DataClass { span, .. }
         | Decl::Enum { span, .. }
         | Decl::Attribute { span, .. }
-        | Decl::Interface { span, .. } => span.start,
+        | Decl::Interface { span, .. }
+        | Decl::TypeAlias { span, .. } => span.start,
     }
 }
 
@@ -2578,6 +2614,18 @@ fn collect_stmt_explicit_type_arg_actions(
         Stmt::Listen { event, body, .. } => {
             collect_expr_explicit_type_arg_actions(event, None, callable_signatures, selection_span, actions);
             collect_block_explicit_type_arg_actions(body, callable_signatures, None, selection_span, actions);
+        }
+        Stmt::Try { try_block, catches, finally_block, .. } => {
+            collect_block_explicit_type_arg_actions(try_block, callable_signatures, expected_return_ty, selection_span, actions);
+            for c in catches {
+                collect_block_explicit_type_arg_actions(&c.body, callable_signatures, expected_return_ty, selection_span, actions);
+            }
+            if let Some(fb) = finally_block {
+                collect_block_explicit_type_arg_actions(fb, callable_signatures, expected_return_ty, selection_span, actions);
+            }
+        }
+        Stmt::Throw { expr, .. } => {
+            collect_expr_explicit_type_arg_actions(expr, None, callable_signatures, selection_span, actions);
         }
     }
 }

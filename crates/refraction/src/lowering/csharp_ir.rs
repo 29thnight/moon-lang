@@ -116,6 +116,20 @@ pub enum CsStmt {
     Continue(Option<Span>),
     Raw(String, Option<Span>),
     Block(Vec<CsStmt>, Option<Span>),
+    TryCatch {
+        try_body: Vec<CsStmt>,
+        catches: Vec<CsCatchClause>,
+        finally_body: Option<Vec<CsStmt>>,
+        source_span: Option<Span>,
+    },
+    Throw(String, Option<Span>),
+}
+
+#[derive(Debug, Clone)]
+pub struct CsCatchClause {
+    pub exception_type: String,
+    pub name: String,
+    pub body: Vec<CsStmt>,
 }
 
 #[derive(Debug, Clone)]

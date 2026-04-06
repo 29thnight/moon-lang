@@ -350,7 +350,9 @@ fn statement_source_span(statement: &CsStmt) -> Option<Span> {
         | CsStmt::Break(source_span)
         | CsStmt::Continue(source_span)
         | CsStmt::Raw(_, source_span)
-        | CsStmt::Block(_, source_span) => *source_span,
+        | CsStmt::Block(_, source_span)
+        | CsStmt::TryCatch { source_span, .. }
+        | CsStmt::Throw(_, source_span) => *source_span,
     }
 }
 

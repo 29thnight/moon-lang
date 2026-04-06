@@ -242,6 +242,25 @@ impl Analyzer {
                     definition_id,
                 });
             }
+            Decl::TypeAlias { name, name_span, target, .. } => {
+                // Register type alias as a type synonym
+                let target_ty = self.resolve_typeref(target);
+                let definition_id = self.record_definition(
+                    name.clone(),
+                    name.clone(),
+                    HirDefinitionKind::Type,
+                    target_ty.clone(),
+                    false,
+                    *name_span,
+                );
+                self.scopes.define(Symbol {
+                    name: name.clone(),
+                    ty: target_ty,
+                    kind: SymbolKind::Type,
+                    mutable: false,
+                    definition_id,
+                });
+            }
         }
     }
 
@@ -441,6 +460,9 @@ impl Analyzer {
             }
             Decl::Interface { .. } => {
                 // Interface members are signatures only — no body analysis needed.
+            }
+            Decl::TypeAlias { .. } => {
+                // Type aliases are resolved during registration; nothing to analyze.
             }
         }
     }
@@ -1036,6 +1058,32 @@ impl Analyzer {
             Stmt::Expr { expr, .. } => {
                 self.analyze_expr(expr);
             }
+            Stmt::Try { try_block, catches, finally_block, .. } => {
+                self.scopes.push_scope();
+                self.analyze_block(try_block);
+                self.scopes.pop_scope();
+                for catch in catches {
+                    self.scopes.push_scope();
+                    let catch_ty = self.resolve_typeref(&catch.ty);
+                    self.scopes.define(Symbol {
+                        name: catch.name.clone(),
+                        ty: catch_ty,
+                        kind: SymbolKind::Local,
+                        mutable: false,
+                        definition_id: None,
+                    });
+                    self.analyze_block(&catch.body);
+                    self.scopes.pop_scope();
+                }
+                if let Some(finally) = finally_block {
+                    self.scopes.push_scope();
+                    self.analyze_block(finally);
+                    self.scopes.pop_scope();
+                }
+            }
+            Stmt::Throw { expr, .. } => {
+                self.analyze_expr(expr);
+            }
         }
     }
 
@@ -1105,7 +1153,7 @@ impl Analyzer {
                     | BinOp::LtEq | BinOp::GtEq => {
                         PrismType::Primitive(PrimitiveKind::Bool)
                     }
-                    BinOp::And | BinOp::Or => {
+                    BinOp::And | BinOp::Or | BinOp::In => {
                         PrismType::Primitive(PrimitiveKind::Bool)
                     }
                 }

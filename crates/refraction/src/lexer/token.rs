@@ -146,6 +146,18 @@ pub enum TokenKind {
     // === Keywords: intrinsic ===
     Intrinsic,
 
+    // === Keywords: exception handling ===
+    Try,
+    Catch,
+    Finally,
+    Throw,
+
+    // === Keywords: modifiers ===
+    Static,
+
+    // === Keywords: type alias ===
+    TypeAlias,
+
     // === Keywords: other ===
     Using,
     Null,
@@ -181,6 +193,7 @@ pub enum TokenKind {
     Dot,            // .
     QuestionDot,    // ?.
     Elvis,          // ?:
+    ElvisAssign,    // ?:=
     Question,       // ?
     Colon,          // :
     DotDot,         // ..
@@ -265,6 +278,12 @@ impl TokenKind {
                 | TokenKind::Unlisten
                 | TokenKind::Manual
                 | TokenKind::Intrinsic
+                | TokenKind::Try
+                | TokenKind::Catch
+                | TokenKind::Finally
+                | TokenKind::Throw
+                | TokenKind::Static
+                | TokenKind::TypeAlias
                 | TokenKind::Using
                 | TokenKind::Null
                 | TokenKind::This
@@ -337,6 +356,12 @@ pub fn lookup_keyword(ident: &str) -> Option<TokenKind> {
         "unlisten" => Some(TokenKind::Unlisten),
         "manual" => Some(TokenKind::Manual),
         "intrinsic" => Some(TokenKind::Intrinsic),
+        "try" => Some(TokenKind::Try),
+        "catch" => Some(TokenKind::Catch),
+        "finally" => Some(TokenKind::Finally),
+        "throw" => Some(TokenKind::Throw),
+        "static" => Some(TokenKind::Static),
+        "typealias" => Some(TokenKind::TypeAlias),
         "using" => Some(TokenKind::Using),
         "null" => Some(TokenKind::Null),
         "this" => Some(TokenKind::This),

@@ -202,7 +202,8 @@ impl Parser {
             TokenKind::Enum => self.parse_enum(),
             TokenKind::Attribute => self.parse_attribute_decl(annotations),
             TokenKind::Interface => self.parse_interface(),
-            _ => Err(self.error(format!("Expected declaration (component, singleton, asset, class, enum, attribute, interface), found {:?}", self.peek()))),
+            TokenKind::TypeAlias => self.parse_type_alias(),
+            _ => Err(self.error(format!("Expected declaration (component, singleton, asset, class, enum, attribute, interface, typealias), found {:?}", self.peek()))),
         }
     }
 
@@ -290,6 +291,21 @@ impl Parser {
             extends,
             extends_spans,
             members,
+            span: Span { start: start.start, end: self.peek_span().end },
+        })
+    }
+
+    fn parse_type_alias(&mut self) -> Result<Decl, ParseError> {
+        let start = self.peek_span();
+        self.advance(); // consume 'typealias'
+        let (name, name_span) = self.expect_ident()?;
+        self.expect(&TokenKind::Eq)?;
+        let target = self.parse_type()?;
+        self.expect_newline_or_eof();
+        Ok(Decl::TypeAlias {
+            name,
+            name_span,
+            target,
             span: Span { start: start.start, end: self.peek_span().end },
         })
     }
@@ -663,7 +679,7 @@ impl Parser {
             TokenKind::Override => {
                 self.advance();
                 self.expect(&TokenKind::Func)?;
-                self.parse_func_inner(Visibility::Public, true)
+                self.parse_func_inner(Visibility::Public, false, true)
             }
             TokenKind::Public | TokenKind::Private | TokenKind::Protected => {
                 let vis = self.parse_visibility();
@@ -673,12 +689,20 @@ impl Parser {
                     TokenKind::Override => {
                         self.advance();
                         self.expect(&TokenKind::Func)?;
-                        self.parse_func_inner(vis, true)
+                        self.parse_func_inner(vis, false, true)
                     }
                     // field: private rb: Rigidbody
                     TokenKind::Identifier(_) => self.parse_field(vis),
                     TokenKind::Val | TokenKind::Var | TokenKind::Const | TokenKind::Fixed => self.parse_val_var_field(vis),
                     _ => Err(self.error(format!("Expected member after visibility, found {:?}", self.peek()))),
+                }
+            }
+            TokenKind::Static => {
+                self.advance(); // consume 'static'
+                match self.peek().clone() {
+                    TokenKind::Func => self.parse_func_with_static(Visibility::Public, false, true),
+                    TokenKind::Val | TokenKind::Var | TokenKind::Const | TokenKind::Fixed => self.parse_val_var_field_with_static(Visibility::Public, true),
+                    _ => Err(self.error(format!("Expected 'func', 'val', or 'var' after 'static', found {:?}", self.peek()))),
                 }
             }
             TokenKind::Val | TokenKind::Var | TokenKind::Const | TokenKind::Fixed => self.parse_val_var_field(Visibility::Public),
@@ -863,10 +887,15 @@ impl Parser {
 
     fn parse_func(&mut self, vis: Visibility, is_override: bool) -> Result<Member, ParseError> {
         self.advance(); // consume 'func'
-        self.parse_func_inner(vis, is_override)
+        self.parse_func_inner(vis, false, is_override)
     }
 
-    fn parse_func_inner(&mut self, vis: Visibility, is_override: bool) -> Result<Member, ParseError> {
+    fn parse_func_with_static(&mut self, vis: Visibility, is_override: bool, is_static: bool) -> Result<Member, ParseError> {
+        self.advance(); // consume 'func'
+        self.parse_func_inner(vis, is_static, is_override)
+    }
+
+    fn parse_func_inner(&mut self, vis: Visibility, is_static: bool, is_override: bool) -> Result<Member, ParseError> {
         let start = self.peek_span();
         let (name, name_span) = self.expect_ident()?;
 
@@ -902,6 +931,7 @@ impl Parser {
 
         Ok(Member::Func {
             visibility: vis,
+            is_static,
             is_override,
             name,
             name_span,
@@ -1040,6 +1070,7 @@ impl Parser {
         self.expect_newline_or_eof();
         Ok(Member::Field {
             visibility: vis,
+            is_static: false,
             mutability: Mutability::Var,
             name,
             name_span,
@@ -1050,6 +1081,10 @@ impl Parser {
     }
 
     fn parse_val_var_field(&mut self, vis: Visibility) -> Result<Member, ParseError> {
+        self.parse_val_var_field_with_static(vis, false)
+    }
+
+    fn parse_val_var_field_with_static(&mut self, vis: Visibility, is_static: bool) -> Result<Member, ParseError> {
         let start = self.peek_span();
         let mutability = if self.eat(&TokenKind::Val) {
             Mutability::Val
@@ -1075,6 +1110,7 @@ impl Parser {
         self.expect_newline_or_eof();
         Ok(Member::Field {
             visibility: vis,
+            is_static,
             mutability,
             name,
             name_span,
@@ -1164,6 +1200,8 @@ impl Parser {
                 self.expect_newline_or_eof();
                 Ok(Stmt::Continue { span: start })
             }
+            TokenKind::Try => self.parse_try_stmt(),
+            TokenKind::Throw => self.parse_throw_stmt(),
             _ => self.parse_expr_or_assignment_stmt(),
         }
     }
@@ -1302,11 +1340,23 @@ impl Parser {
         // as a condition.  We try a speculative parse: if next token is Identifier and after
         // skipping any '.Identifier' chain we find '(' followed by identifier list followed by ')',
         // treat it as a Binding pattern.  Otherwise fall through to the Expression path.
-        let pattern = if self.eat(&TokenKind::Else) {
+        let first_pattern = if self.eat(&TokenKind::Else) {
             WhenPattern::Else
         } else if self.eat(&TokenKind::Is) {
             let ty = self.parse_type()?;
             WhenPattern::Is(ty)
+        } else if self.check(&TokenKind::In) {
+            // v4: Range pattern: `in start..end`
+            let range_start = self.peek_span();
+            self.advance(); // consume 'in'
+            let range_begin = self.parse_additive()?;
+            self.expect(&TokenKind::DotDot)?;
+            let range_end = self.parse_additive()?;
+            WhenPattern::Range {
+                start: range_begin,
+                end: range_end,
+                span: Span { start: range_start.start, end: self.peek_span().end },
+            }
         } else if let Some(bp) = self.try_parse_binding_pattern()? {
             WhenPattern::Binding {
                 path: bp.path,
@@ -1316,6 +1366,38 @@ impl Parser {
         } else {
             let expr = self.parse_expr()?;
             WhenPattern::Expression(expr)
+        };
+
+        // v4: OR pattern — if we see ',' and then another pattern (not '=>'), collect multiple patterns
+        let pattern = if self.check(&TokenKind::Comma) && !matches!(first_pattern, WhenPattern::Else | WhenPattern::Range { .. }) {
+            let mut patterns = vec![first_pattern];
+            while self.eat(&TokenKind::Comma) {
+                self.skip_newlines();
+                // Parse next pattern atom (no nested OR)
+                let next = if self.eat(&TokenKind::Is) {
+                    let ty = self.parse_type()?;
+                    WhenPattern::Is(ty)
+                } else if self.check(&TokenKind::In) {
+                    let rs = self.peek_span();
+                    self.advance();
+                    let rb = self.parse_additive()?;
+                    self.expect(&TokenKind::DotDot)?;
+                    let re = self.parse_additive()?;
+                    WhenPattern::Range { start: rb, end: re, span: Span { start: rs.start, end: self.peek_span().end } }
+                } else if let Some(bp) = self.try_parse_binding_pattern()? {
+                    WhenPattern::Binding { path: bp.path, bindings: bp.bindings, span: bp.span }
+                } else {
+                    let expr = self.parse_expr()?;
+                    WhenPattern::Expression(expr)
+                };
+                patterns.push(next);
+            }
+            WhenPattern::Or {
+                span: Span { start: start.start, end: self.peek_span().end },
+                patterns,
+            }
+        } else {
+            first_pattern
         };
 
         // v2: optional guard `if <cond>`
@@ -1622,6 +1704,58 @@ impl Parser {
         })
     }
 
+    fn parse_try_stmt(&mut self) -> Result<Stmt, ParseError> {
+        let start = self.peek_span();
+        self.advance(); // consume 'try'
+        self.skip_newlines();
+        let try_block = self.parse_block()?;
+
+        let mut catches = Vec::new();
+        while self.check(&TokenKind::Catch) {
+            let catch_start = self.peek_span();
+            self.advance(); // consume 'catch'
+            self.expect(&TokenKind::LParen)?;
+            let (name, _) = self.expect_ident()?;
+            self.expect(&TokenKind::Colon)?;
+            let ty = self.parse_type()?;
+            self.expect(&TokenKind::RParen)?;
+            self.skip_newlines();
+            let body = self.parse_block()?;
+            catches.push(CatchClause {
+                name,
+                ty,
+                body,
+                span: Span { start: catch_start.start, end: self.peek_span().end },
+            });
+        }
+
+        let finally_block = if self.check(&TokenKind::Finally) {
+            self.advance(); // consume 'finally'
+            self.skip_newlines();
+            Some(self.parse_block()?)
+        } else {
+            None
+        };
+
+        Ok(Stmt::Try {
+            try_block,
+            catches,
+            finally_block,
+            span: Span { start: start.start, end: self.peek_span().end },
+        })
+    }
+
+    fn parse_throw_stmt(&mut self) -> Result<Stmt, ParseError> {
+        let start = self.peek_span();
+        self.advance(); // consume 'throw'
+        let expr = self.parse_expr()?;
+        self.expect_newline_or_eof();
+        Ok(Stmt::Throw {
+            expr,
+            span: Span { start: start.start, end: self.peek_span().end },
+        })
+    }
+
     fn parse_expr_or_assignment_stmt(&mut self) -> Result<Stmt, ParseError> {
         let start = self.peek_span();
         let expr = self.parse_expr()?;
@@ -1634,6 +1768,7 @@ impl Parser {
             TokenKind::StarEq => Some(AssignOp::StarAssign),
             TokenKind::SlashEq => Some(AssignOp::SlashAssign),
             TokenKind::PercentEq => Some(AssignOp::ModAssign),
+            TokenKind::ElvisAssign => Some(AssignOp::NullCoalesceAssign),
             _ => None,
         };
 
@@ -1794,6 +1929,14 @@ impl Parser {
                     let ty = self.parse_type()?;
                     let span = Span { start: start.start, end: self.peek_span().end };
                     left = Expr::Is { expr: Box::new(left), ty, span };
+                    continue;
+                }
+                TokenKind::In => {
+                    let start = left.span();
+                    self.advance();
+                    let right = self.parse_range()?;
+                    let span = Span { start: start.start, end: right.span().end };
+                    left = Expr::Binary { left: Box::new(left), op: BinOp::In, right: Box::new(right), span };
                     continue;
                 }
                 _ => break,

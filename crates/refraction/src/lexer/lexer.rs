@@ -315,6 +315,14 @@ impl Lexer {
         let start = self.make_pos();
         self.advance(); // consume opening '"'
 
+        // Check for triple-quote raw string: """..."""
+        // We already consumed the first ". If next two chars are also ", it's a triple-quote.
+        if self.peek() == Some('"') && self.peek_next() == Some('"') {
+            self.advance(); // consume 2nd "
+            self.advance(); // consume 3rd "
+            return self.scan_raw_string(start);
+        }
+
         let mut text = String::new();
 
         loop {
@@ -449,6 +457,62 @@ impl Lexer {
         self.make_span_token(segment_kind, start)
     }
 
+    // === Raw strings (triple-quoted) ===
+
+    fn scan_raw_string(&mut self, start: Position) -> Token {
+        let mut text = String::new();
+
+        // Skip the optional first newline after opening """
+        if self.peek() == Some('\n') {
+            self.advance();
+            self.line += 1;
+            self.col = 1;
+        } else if self.peek() == Some('\r') {
+            self.advance();
+            if self.peek() == Some('\n') {
+                self.advance();
+            }
+            self.line += 1;
+            self.col = 1;
+        }
+
+        loop {
+            match self.peek() {
+                None => {
+                    return self.make_span_token(
+                        TokenKind::Error("Unterminated raw string literal".into()),
+                        start,
+                    );
+                }
+                Some('"') if self.peek_next() == Some('"') && self.source.get(self.pos + 2).copied() == Some('"') => {
+                    self.advance(); // consume 1st "
+                    self.advance(); // consume 2nd "
+                    self.advance(); // consume 3rd "
+                    return self.make_span_token(TokenKind::StringLiteral(text), start);
+                }
+                Some('\n') => {
+                    text.push('\n');
+                    self.advance();
+                    self.line += 1;
+                    self.col = 1;
+                }
+                Some('\r') => {
+                    self.advance();
+                    if self.peek() == Some('\n') {
+                        self.advance();
+                    }
+                    text.push('\n');
+                    self.line += 1;
+                    self.col = 1;
+                }
+                Some(ch) => {
+                    text.push(ch);
+                    self.advance();
+                }
+            }
+        }
+    }
+
     // === Operators ===
 
     fn scan_operator(&mut self) -> Token {
@@ -562,7 +626,13 @@ impl Lexer {
                     self.make_span_token(TokenKind::QuestionDot, start)
                 } else if self.peek() == Some(':') {
                     self.advance();
-                    self.make_span_token(TokenKind::Elvis, start)
+                    // Check for ?:= (null coalescing assignment)
+                    if self.peek() == Some('=') {
+                        self.advance();
+                        self.make_span_token(TokenKind::ElvisAssign, start)
+                    } else {
+                        self.make_span_token(TokenKind::Elvis, start)
+                    }
                 } else {
                     self.make_span_token(TokenKind::Question, start)
                 }
