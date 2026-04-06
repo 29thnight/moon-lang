@@ -582,4 +582,25 @@ component PlayerHealth : MonoBehaviour {
         assert!(output.contains("List<T> findAll<T>()"), "should generate generic method signature");
         assert!(output.contains("where T : Component"), "should generate where clause on method");
     }
+
+    #[test]
+    fn test_singleton_component() {
+        let src = r#"singleton component AudioManager : MonoBehaviour {
+  serialize volume: Float = 1.0
+}"#;
+        let output = compile(src);
+        // Singleton _instance field
+        assert!(output.contains("private static AudioManager _instance;"), "should generate _instance field");
+        // Singleton Instance property with lazy init
+        assert!(output.contains("public static AudioManager Instance"), "should generate Instance property");
+        assert!(output.contains("FindFirstObjectByType<AudioManager>()"), "should use FindFirstObjectByType in getter");
+        assert!(output.contains("go.AddComponent<AudioManager>()"), "should fallback-create in getter");
+        // Awake with singleton guard + DontDestroyOnLoad
+        assert!(output.contains("_instance = this;"), "should assign _instance = this in Awake");
+        assert!(output.contains("DontDestroyOnLoad(gameObject)"), "should call DontDestroyOnLoad in Awake");
+        assert!(output.contains("Destroy(gameObject)"), "should destroy duplicate in Awake");
+        // User serialize field should still be present
+        assert!(output.contains("[SerializeField]"), "should still emit user serialize fields");
+        assert!(output.contains("private float _volume = 1.0f;"), "should still emit user field");
+    }
 }

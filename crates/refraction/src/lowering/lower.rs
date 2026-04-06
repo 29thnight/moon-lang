@@ -29,7 +29,7 @@ fn lower_usings(usings: &[UsingDecl]) -> Vec<String> {
 
 fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
     match decl {
-        Decl::Component { name, base_class, interfaces, members, .. } => {
+        Decl::Component { name, is_singleton, base_class, interfaces, members, .. } => {
             let mut cs_members = Vec::new();
             let callable_signatures = collect_callable_signatures(members);
             let (require_fields, optional_fields, child_fields, parent_fields, user_awake) =
@@ -135,6 +135,56 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                     "Awake",
                     &format!("{} = GetComponent<PlayerInput>();", PRSM_INPUT_FIELD),
                 );
+            }
+
+            // Singleton pattern: inject _instance field, Instance property, and Awake guard.
+            if *is_singleton {
+                // Insert _instance field and Instance property at the top of the member list.
+                let instance_field = CsMember::Field {
+                    attributes: vec![],
+                    modifiers: "private static".into(),
+                    ty: name.clone(),
+                    name: "_instance".into(),
+                    init: None,
+                };
+                let instance_property = CsMember::RawCode(format!(
+                    concat!(
+                        "public static {0} Instance\n",
+                        "    {{\n",
+                        "        get\n",
+                        "        {{\n",
+                        "            if (_instance == null)\n",
+                        "            {{\n",
+                        "                _instance = FindFirstObjectByType<{0}>();\n",
+                        "                if (_instance == null)\n",
+                        "                {{\n",
+                        "                    var go = new GameObject(nameof({0}));\n",
+                        "                    _instance = go.AddComponent<{0}>();\n",
+                        "                }}\n",
+                        "            }}\n",
+                        "            return _instance;\n",
+                        "        }}\n",
+                        "    }}",
+                    ),
+                    name
+                ));
+                cs_members.insert(0, instance_property);
+                cs_members.insert(0, instance_field);
+
+                // Inject singleton guard into Awake (prepended before all other Awake code).
+                let singleton_awake_guard = concat!(
+                    "if (_instance == null)\n",
+                    "        {\n",
+                    "            _instance = this;\n",
+                    "            DontDestroyOnLoad(gameObject);\n",
+                    "        }\n",
+                    "        else if (_instance != this)\n",
+                    "        {\n",
+                    "            Destroy(gameObject);\n",
+                    "            return;\n",
+                    "        }",
+                );
+                inject_or_synthesize(&mut cs_members, "Awake", singleton_awake_guard);
             }
 
             if needs_expr_helper(&cs_members) {

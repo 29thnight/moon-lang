@@ -139,6 +139,7 @@ impl Parser {
                 self.errors.push(e);
                 // Return a dummy component
                 Decl::Component {
+                    is_singleton: false,
                     name: "<error>".into(),
                     name_span: self.peek_span(),
                     base_class: "MonoBehaviour".into(),
@@ -186,14 +187,22 @@ impl Parser {
         let annotations = self.parse_annotations()?;
 
         match self.peek().clone() {
-            TokenKind::Component => self.parse_component(),
+            TokenKind::Component => self.parse_component_decl(false),
+            TokenKind::Singleton => {
+                self.advance(); // consume 'singleton'
+                self.skip_newlines();
+                if !self.check(&TokenKind::Component) {
+                    return Err(self.error("'singleton' can only be used before 'component'".into()));
+                }
+                self.parse_component_decl(true)
+            }
             TokenKind::Asset => self.parse_asset(),
             TokenKind::Data => self.parse_data_class(),
             TokenKind::Class => self.parse_class(),
             TokenKind::Enum => self.parse_enum(),
             TokenKind::Attribute => self.parse_attribute_decl(annotations),
             TokenKind::Interface => self.parse_interface(),
-            _ => Err(self.error(format!("Expected declaration (component, asset, class, enum, attribute, interface), found {:?}", self.peek()))),
+            _ => Err(self.error(format!("Expected declaration (component, singleton, asset, class, enum, attribute, interface), found {:?}", self.peek()))),
         }
     }
 
@@ -285,7 +294,7 @@ impl Parser {
         })
     }
 
-    fn parse_component(&mut self) -> Result<Decl, ParseError> {
+    fn parse_component_decl(&mut self, is_singleton: bool) -> Result<Decl, ParseError> {
         let start = self.peek_span();
         self.advance(); // consume 'component'
 
@@ -300,6 +309,7 @@ impl Parser {
         self.expect(&TokenKind::RBrace)?;
 
         Ok(Decl::Component {
+            is_singleton,
             name,
             name_span,
             base_class,

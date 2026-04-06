@@ -26,6 +26,7 @@ pub struct UsingDecl {
 #[derive(Debug, Clone)]
 pub enum Decl {
     Component {
+        is_singleton: bool,
         name: String,
         name_span: Span,
         base_class: String,
