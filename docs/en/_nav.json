@@ -1,0 +1,76 @@
+[
+  {
+    "id": "get-started",
+    "title": "Get started",
+    "items": [
+      { "id": "index", "title": "Introduction", "path": "docs/en/index.md" },
+      { "id": "overview", "title": "Overview", "path": "docs/en/overview.md" },
+      { "id": "getting-started", "title": "Quickstart", "path": "docs/en/getting-started.md" }
+    ]
+  },
+  {
+    "id": "language",
+    "title": "Language",
+    "items": [
+      { "id": "syntax", "title": "Syntax", "path": "docs/en/syntax.md" },
+      { "id": "types", "title": "Types", "path": "docs/en/types.md" },
+      { "id": "functions", "title": "Functions", "path": "docs/en/functions.md" },
+      { "id": "operators", "title": "Operators", "path": "docs/en/operators.md" },
+      { "id": "control-flow", "title": "Control Flow", "path": "docs/en/pattern-matching-and-control-flow.md" },
+      { "id": "coroutines", "title": "Coroutines", "path": "docs/en/coroutines.md" },
+      { "id": "strings", "title": "Strings & Collections", "path": "docs/en/strings-and-collections.md" },
+      { "id": "input-system", "title": "Input System", "path": "docs/en/input-system.md" },
+      { "id": "generic-inference", "title": "Generic Inference", "path": "docs/en/generic-inference.md" }
+    ]
+  },
+  {
+    "id": "core",
+    "title": "Core concepts",
+    "items": [
+      { "id": "data-models", "title": "Data Models", "path": "docs/en/data-models.md" },
+      { "id": "lifecycle", "title": "Lifecycle", "path": "docs/en/lifecycle.md" },
+      { "id": "events", "title": "Events & Intrinsics", "path": "docs/en/events-and-intrinsic.md" },
+      { "id": "declarations", "title": "Declarations & Fields", "path": "docs/en/declarations-and-fields.md" }
+    ]
+  },
+  {
+    "id": "tooling",
+    "title": "Tooling & Integration",
+    "items": [
+      { "id": "cli", "title": "CLI", "path": "docs/en/cli.md" },
+      { "id": "unity", "title": "Unity Integration", "path": "docs/en/unity-integration.md" },
+      { "id": "vscode", "title": "VS Code Extension", "path": "docs/en/vscode-extension.md" },
+      { "id": "tooling-overview", "title": "Tooling Overview", "path": "docs/en/tooling.md" },
+      { "id": "config", "title": "Project Configuration", "path": "docs/en/project-configuration.md" },
+      { "id": "generated-cs", "title": "Generated C# & Source Maps", "path": "docs/en/generated-csharp-and-source-maps.md" },
+      { "id": "source-maps", "title": "Source Maps", "path": "docs/en/source-maps.md" }
+    ]
+  },
+  {
+    "id": "reference",
+    "title": "Reference",
+    "items": [
+      { "id": "grammar", "title": "Formal Grammar", "path": "docs/en/grammar.md" },
+      { "id": "error-catalog", "title": "Error Catalog", "path": "docs/en/error-catalog.md" },
+      { "id": "idioms", "title": "Idioms & Patterns", "path": "docs/en/idioms.md" },
+      { "id": "migration", "title": "v1 → v2 Migration", "path": "docs/en/migration-v1-to-v2.md" }
+    ]
+  },
+  {
+    "id": "spec",
+    "title": "Specification",
+    "items": [
+      { "id": "standard", "title": "Language Standard", "path": "docs/en/spec/standard.md" },
+      { "id": "changes-lang-2", "title": "Language 1 → 2 Changes", "path": "docs/en/spec/changes-lang-2.md" }
+    ]
+  },
+  {
+    "id": "advanced",
+    "title": "Advanced",
+    "items": [
+      { "id": "architecture", "title": "Architecture", "path": "docs/en/architecture.md" },
+      { "id": "internals", "title": "Internals", "path": "docs/en/internals.md" },
+      { "id": "future", "title": "Future Direction", "path": "docs/en/future-direction.md" }
+    ]
+  }
+]
