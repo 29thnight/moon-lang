@@ -96,6 +96,38 @@ pub fn format_diagnostic(diagnostic: &Diagnostic, file_path: &str) -> String {
     )
 }
 
+/// Pretty-print a diagnostic in the v4 enhanced format (Section 28).
+/// `source` is the full source text of the file. If empty, the renderer
+/// gracefully degrades to the header-only form.
+pub fn format_diagnostic_pretty(
+    diagnostic: &Diagnostic,
+    file_path: &str,
+    source: &str,
+    with_color: bool,
+) -> String {
+    use crate::diagnostics::render::{render_diagnostic, RenderOptions};
+    render_diagnostic(diagnostic, file_path, source, RenderOptions { with_color })
+}
+
+/// v4 §23: run the optimizer over a freshly-lowered C# IR file. Returns the
+/// optimizer report containing rewrite counts and any W026/W027 diagnostics.
+/// Caller is expected to merge the diagnostics into its `FileResult`.
+pub fn run_optimizer(
+    ir: &mut crate::lowering::csharp_ir::CsFile,
+    options: crate::lowering::optimizer::OptimizerOptions,
+) -> crate::lowering::optimizer::OptimizerReport {
+    crate::lowering::optimizer::optimize(ir, options)
+}
+
+/// v4 §24: run Burst compatibility analysis over a C# IR file. Returns the
+/// analysis report; the caller decides how to surface the diagnostics.
+pub fn run_burst_analysis(
+    ir: &crate::lowering::csharp_ir::CsFile,
+    options: &crate::lowering::burst::BurstAnalysisOptions,
+) -> crate::lowering::burst::BurstAnalysisReport {
+    crate::lowering::burst::analyze(ir, options)
+}
+
 pub fn to_json_diagnostic(diagnostic: &Diagnostic, file_path: &str) -> JsonDiagnostic {
     JsonDiagnostic {
         code: diagnostic.code.to_string(),
@@ -162,8 +194,28 @@ fn compile_file_with_features(
     match fs::write(&out_path, output) {
         Ok(_) => {
             result.output_path = Some(out_path.clone());
-            match source_map::write_source_map(&hir_file, &ir, &out_path, &fs::read_to_string(&out_path).unwrap_or_default()) {
-                Ok(source_map_path) => result.source_map_path = Some(source_map_path),
+            let generated_source = fs::read_to_string(&out_path).unwrap_or_default();
+            match source_map::write_source_map(&hir_file, &ir, &out_path, &generated_source) {
+                Ok(source_map_path) => {
+                    result.source_map_path = Some(source_map_path);
+                    // v4 §30.2: also write the flat prsmLine→csLine map next
+                    // to the rich one. Failures here are non-fatal (W032).
+                    let rich = source_map::build_source_map(&hir_file, &ir, &out_path, &generated_source);
+                    let flat = crate::debugger::flatten_source_map(&rich);
+                    let flat_path = crate::debugger::debug_map_path_for_generated(&out_path);
+                    if let Ok(json) = serde_json::to_string_pretty(&flat) {
+                        if fs::write(&flat_path, json).is_err() {
+                            result.diagnostics.push(crate::diagnostics::Diagnostic::warning(
+                                "W032",
+                                format!("Source map generation failed for {}", flat_path.display()),
+                                Span {
+                                    start: Position { line: 1, col: 1 },
+                                    end: Position { line: 1, col: 1 },
+                                },
+                            ));
+                        }
+                    }
+                }
                 Err(error) => {
                     result.diagnostics.push(io_error(error));
                     result.has_errors = true;

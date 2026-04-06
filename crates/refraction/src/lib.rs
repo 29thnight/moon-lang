@@ -14,5 +14,7 @@ pub mod project_graph;
 pub mod project_index;
 pub mod roslyn_sidecar_client;
 pub mod roslyn_sidecar_protocol;
+pub mod refactor;
 pub mod source_map;
+pub mod debugger;
 pub mod r#where;

@@ -61,7 +61,12 @@ pub fn run_server() -> Result<(), String> {
         "referencesProvider": true,
         "hoverProvider": true,
         "codeActionProvider": {
-            "codeActionKinds": ["refactor.rewrite", "source.organizeImports"]
+            "codeActionKinds": [
+                "refactor.rewrite",
+                "refactor.extract",
+                "refactor.inline",
+                "source.organizeImports"
+            ]
         },
         "renameProvider": {
             "prepareProvider": true
