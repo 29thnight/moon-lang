@@ -340,6 +340,13 @@ impl Parser {
 
         let (name, name_span) = self.expect_ident()?;
 
+        // Optional type parameters: <T, U>
+        let type_params = if self.check(&TokenKind::Lt) {
+            self.parse_type_params()?
+        } else {
+            Vec::new()
+        };
+
         let (super_class, super_class_span) = if self.eat(&TokenKind::Colon) {
             let (sc, span) = self.expect_ident()?;
             (Some(sc), Some(span))
@@ -352,6 +359,9 @@ impl Parser {
             (vec![], vec![])
         };
 
+        // Optional where clauses before the class body
+        let where_clauses = self.parse_where_clauses()?;
+
         self.skip_newlines();
         self.expect(&TokenKind::LBrace)?;
         let members = self.parse_members()?;
@@ -360,6 +370,8 @@ impl Parser {
         Ok(Decl::Class {
             name,
             name_span,
+            type_params,
+            where_clauses,
             super_class,
             super_class_span,
             interfaces,
@@ -378,6 +390,92 @@ impl Parser {
             interface_spans.push(span);
         }
         Ok((interfaces, interface_spans))
+    }
+
+    /// Parse `<T, U>` type parameter list.
+    fn parse_type_params(&mut self) -> Result<Vec<String>, ParseError> {
+        self.expect(&TokenKind::Lt)?;
+        let mut params = Vec::new();
+        let (first, _) = self.expect_ident()?;
+        params.push(first);
+        while self.eat(&TokenKind::Comma) {
+            let (p, _) = self.expect_ident()?;
+            params.push(p);
+        }
+        self.expect(&TokenKind::Gt)?;
+        Ok(params)
+    }
+
+    /// Parse optional `where T : Constraint, U : Other` clauses.
+    /// Each clause: Identifier `:` Identifier { `,` Identifier }
+    /// Multiple clauses separated by continuing to see identifiers after the
+    /// previous constraint list (comma is used within a single clause for
+    /// multiple constraints on the same type param).
+    fn parse_where_clauses(&mut self) -> Result<Vec<WhereClause>, ParseError> {
+        let mut clauses = Vec::new();
+        // `where` is not a keyword token — it arrives as an Identifier
+        if let TokenKind::Identifier(ref w) = self.peek().clone() {
+            if w != "where" {
+                return Ok(clauses);
+            }
+        } else {
+            return Ok(clauses);
+        }
+        self.advance(); // consume 'where'
+        loop {
+            let (type_param, _) = self.expect_ident()?;
+            self.expect(&TokenKind::Colon)?;
+            let mut constraints = Vec::new();
+            let (first, _) = self.expect_ident()?;
+            constraints.push(first);
+            // Consume additional constraints separated by commas, but only if
+            // the token after the comma is an identifier followed by a colon
+            // (which would start a new clause) — in that case we stop.
+            while self.check(&TokenKind::Comma) {
+                // Peek ahead: comma then ident then colon means new clause
+                // comma then ident then NOT colon means continued constraints
+                let saved = self.pos;
+                self.advance(); // consume comma
+                if let TokenKind::Identifier(next_name) = self.peek().clone() {
+                    let saved2 = self.pos;
+                    self.advance(); // consume ident
+                    if self.check(&TokenKind::Colon) {
+                        // This is a new where clause — backtrack
+                        self.pos = saved;
+                        break;
+                    } else {
+                        // This is another constraint on the same type param
+                        self.pos = saved2; // stay after ident
+                        constraints.push(next_name);
+                    }
+                } else {
+                    // Not an identifier after comma — backtrack
+                    self.pos = saved;
+                    break;
+                }
+            }
+            clauses.push(WhereClause { type_param, constraints });
+            // If the next token is an identifier (not 'where' again), it's another clause
+            if let TokenKind::Identifier(ref w) = self.peek().clone() {
+                if w == "where" || w == "{" {
+                    break;
+                }
+                // Could be another clause like `U : Other`
+                // Check: ident followed by colon?
+                let saved = self.pos;
+                self.advance();
+                if self.check(&TokenKind::Colon) {
+                    self.pos = saved; // backtrack, let the loop parse it
+                    continue;
+                } else {
+                    self.pos = saved;
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        Ok(clauses)
     }
 
     fn parse_data_class(&mut self) -> Result<Decl, ParseError> {
@@ -711,6 +809,14 @@ impl Parser {
     fn parse_func_inner(&mut self, vis: Visibility, is_override: bool) -> Result<Member, ParseError> {
         let start = self.peek_span();
         let (name, name_span) = self.expect_ident()?;
+
+        // Optional type parameters: <T, U>
+        let type_params = if self.check(&TokenKind::Lt) {
+            self.parse_type_params()?
+        } else {
+            Vec::new()
+        };
+
         self.expect(&TokenKind::LParen)?;
         let params = self.parse_param_list()?;
         self.expect(&TokenKind::RParen)?;
@@ -720,6 +826,9 @@ impl Parser {
         } else {
             None
         };
+
+        // Optional where clauses before the body
+        let where_clauses = self.parse_where_clauses()?;
 
         let body = if self.eat(&TokenKind::Eq) {
             // Expression body
@@ -736,6 +845,8 @@ impl Parser {
             is_override,
             name,
             name_span,
+            type_params,
+            where_clauses,
             params,
             return_ty,
             body,

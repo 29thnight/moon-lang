@@ -51,6 +51,10 @@ fn emit_class(out: &mut String, class: &CsClass, indent: usize) {
             header.push_str(&format!(" : {}", class.interfaces.join(", ")));
         }
     }
+    // Append where clauses (e.g. "where T : Component")
+    for wc in &class.where_clauses {
+        header.push_str(&format!(" {}", wc));
+    }
     out.push_str(&header);
     out.push('\n');
     out.push_str(&format!("{}{{\n", pad));
@@ -101,7 +105,7 @@ fn emit_member(out: &mut String, member: &CsMember, indent: usize, _is_enum: boo
                 }
             }
         }
-        CsMember::Method { attributes, modifiers, return_ty, name, params, body, .. } => {
+        CsMember::Method { attributes, modifiers, return_ty, name, params, where_clauses, body, .. } => {
             for attr in attributes {
                 out.push_str(&format!("{}{}\n", pad, attr));
             }
@@ -112,10 +116,15 @@ fn emit_member(out: &mut String, member: &CsMember, indent: usize, _is_enum: boo
                     format!("{} {}", p.ty, p.name)
                 }
             }).collect();
-            if return_ty.is_empty() {
-                out.push_str(&format!("{}{} {}({})\n", pad, modifiers, name, params_str.join(", ")));
+            let where_suffix = if where_clauses.is_empty() {
+                String::new()
             } else {
-                out.push_str(&format!("{}{} {} {}({})\n", pad, modifiers, return_ty, name, params_str.join(", ")));
+                format!(" {}", where_clauses.join(" "))
+            };
+            if return_ty.is_empty() {
+                out.push_str(&format!("{}{} {}({}){}\n", pad, modifiers, name, params_str.join(", "), where_suffix));
+            } else {
+                out.push_str(&format!("{}{} {} {}({}){}\n", pad, modifiers, return_ty, name, params_str.join(", "), where_suffix));
             }
             out.push_str(&format!("{}{{\n", pad));
             for stmt in body {

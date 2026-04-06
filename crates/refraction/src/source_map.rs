@@ -732,6 +732,7 @@ public class Player : MonoBehaviour
                 name: "Player".to_string(),
                 base_class: Some("MonoBehaviour".to_string()),
                 interfaces: vec![],
+                where_clauses: vec![],
                 members: vec![
                     CsMember::Field {
                         attributes: vec!["[SerializeField]".to_string()],
@@ -754,6 +755,7 @@ public class Player : MonoBehaviour
                         return_ty: "void".to_string(),
                         name: "Update".to_string(),
                         params: vec![],
+                        where_clauses: vec![],
                         body: vec![CsStmt::Expr("Debug.Log(speed)".to_string(), Some(span(5, 9, 5, 24)))],
                         source_span: None,
                     },
@@ -763,6 +765,7 @@ public class Player : MonoBehaviour
                         return_ty: "void".to_string(),
                         name: "jump".to_string(),
                         params: vec![],
+                        where_clauses: vec![],
                         body: vec![],
                         source_span: None,
                     },

@@ -22,6 +22,7 @@ pub struct CsClass {
     pub name: String,
     pub base_class: Option<String>,
     pub interfaces: Vec<String>,
+    pub where_clauses: Vec<String>, // e.g. ["where T : Component"]
     pub members: Vec<CsMember>,
 }
 
@@ -49,6 +50,7 @@ pub enum CsMember {
         return_ty: String,
         name: String,
         params: Vec<CsParam>,
+        where_clauses: Vec<String>, // e.g. ["where T : Component"]
         body: Vec<CsStmt>,
         source_span: Option<Span>,
     },

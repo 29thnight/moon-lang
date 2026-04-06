@@ -46,6 +46,8 @@ pub enum Decl {
     Class {
         name: String,
         name_span: Span,
+        type_params: Vec<String>,
+        where_clauses: Vec<WhereClause>,
         super_class: Option<String>,
         super_class_span: Option<Span>,
         interfaces: Vec<String>,
@@ -102,6 +104,13 @@ pub enum InterfaceMember {
         mutable: bool, // val = false, var = true
         span: Span,
     },
+}
+
+/// Generic where clause: `where T : MonoBehaviour, IDamageable`
+#[derive(Debug, Clone)]
+pub struct WhereClause {
+    pub type_param: String,
+    pub constraints: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -170,6 +179,8 @@ pub enum Member {
         is_override: bool,
         name: String,
         name_span: Span,
+        type_params: Vec<String>,
+        where_clauses: Vec<WhereClause>,
         params: Vec<Param>,
         return_ty: Option<TypeRef>,
         body: FuncBody,

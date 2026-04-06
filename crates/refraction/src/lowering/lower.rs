@@ -148,6 +148,7 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                     name: name.clone(),
                     base_class: Some(base_class.clone()),
                     interfaces: interfaces.clone(),
+                    where_clauses: vec![],
                     members: cs_members,
                 },
                 vec![],
@@ -183,12 +184,13 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                     name: name.clone(),
                     base_class: Some(base_class.clone()),
                     interfaces: vec![],
+                    where_clauses: vec![],
                     members: cs_members,
                 },
                 vec![],
             )
         }
-        Decl::Class { name, super_class, interfaces, members, .. } => {
+        Decl::Class { name, type_params, where_clauses, super_class, interfaces, members, .. } => {
             let mut cs_members = Vec::new();
             let callable_signatures = collect_callable_signatures(members);
             for m in members {
@@ -207,13 +209,20 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
             if needs_expr_helper(&cs_members) {
                 cs_members.push(lower_expr_helper_member());
             }
+            // Build class name with optional type parameters
+            let cs_name = if type_params.is_empty() {
+                name.clone()
+            } else {
+                format!("{}<{}>", name, type_params.join(", "))
+            };
             (
                 CsClass {
                     attributes: vec![],
                     modifiers: "public".into(),
-                    name: name.clone(),
+                    name: cs_name,
                     base_class: super_class.clone(),
                     interfaces: interfaces.clone(),
+                    where_clauses: lower_where_clauses(where_clauses),
                     members: cs_members,
                 },
                 vec![],
@@ -233,6 +242,7 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                 name: name.clone(),
                 base_class: None,
                 interfaces: vec![],
+                where_clauses: vec![],
                 members: cs_members,
             };
             let extra_types = if params.is_empty() {
@@ -268,6 +278,7 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                     name: name.clone(),
                     base_class: None,
                     interfaces: extends.clone(),
+                    where_clauses: vec![],
                     members: cs_members,
                 },
                 vec![],
@@ -307,6 +318,7 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                 return_ty: String::new(), // constructor — no return type
                 name: format!("{}Attribute", name),
                 params: ctor_params,
+                where_clauses: vec![],
                 body: ctor_body,
                 source_span: None,
             });
@@ -325,6 +337,7 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                     name: format!("{}Attribute", name),
                     base_class: Some("System.Attribute".into()),
                     interfaces: vec![],
+                    where_clauses: vec![],
                     members: cs_members,
                 },
                 vec![],
@@ -360,6 +373,7 @@ fn lower_data_class(name: &str, fields: &[Param]) -> CsClass {
         name: name.into(),
         base_class: None,
         interfaces: vec![],
+        where_clauses: vec![],
         members: cs_members,
     }
 }
@@ -375,6 +389,7 @@ fn lower_expr_helper_member() -> CsMember {
             name: "thunk".into(),
             default: None,
         }],
+        where_clauses: vec![],
         body: vec![CsStmt::Return(Some("thunk()".into()), None)],
         source_span: None,
     }
@@ -453,6 +468,7 @@ fn lower_data_class_constructor(name: &str, fields: &[Param]) -> CsMember {
         return_ty: String::new(),
         name: name.into(),
         params,
+        where_clauses: vec![],
         body,
         source_span: None,
     }
@@ -486,6 +502,7 @@ fn lower_data_class_equals(name: &str, fields: &[Param]) -> CsMember {
             name: "obj".into(),
             default: None,
         }],
+        where_clauses: vec![],
         body: vec![
             CsStmt::If {
                 cond: "ReferenceEquals(null, obj)".into(),
@@ -544,6 +561,7 @@ fn lower_data_class_hash_code(fields: &[Param]) -> CsMember {
         return_ty: "int".into(),
         name: "GetHashCode".into(),
         params: vec![],
+        where_clauses: vec![],
         body,
         source_span: None,
     }
@@ -567,6 +585,7 @@ fn lower_data_class_to_string(name: &str, fields: &[Param]) -> CsMember {
         return_ty: "string".into(),
         name: "ToString".into(),
         params: vec![],
+        where_clauses: vec![],
         body: vec![CsStmt::Return(Some(body_expr), None)],
         source_span: None,
     }
@@ -607,6 +626,7 @@ fn lower_parameterized_enum_extensions(name: &str, params: &[EnumParam], entries
                 name: "value".into(),
                 default: None,
             }],
+            where_clauses: vec![],
             body: vec![CsStmt::Switch {
                 subject: "value".into(),
                 cases,
@@ -622,6 +642,7 @@ fn lower_parameterized_enum_extensions(name: &str, params: &[EnumParam], entries
         name: format!("{}Extensions", name),
         base_class: None,
         interfaces: vec![],
+        where_clauses: vec![],
         members,
     }
 }
@@ -949,6 +970,7 @@ fn lower_awake(
         return_ty: "void".into(),
         name: "Awake".into(),
         params: vec![],
+        where_clauses: vec![],
         body,
         source_span: None,
     }
@@ -971,6 +993,7 @@ fn lower_lifecycle(kind: LifecycleKind, params: &[Param], body_block: &Block) ->
         return_ty: "void".into(),
         name: method_name.into(),
         params: cs_params,
+        where_clauses: vec![],
         body,
         source_span: Some(body_block.span),
     }
@@ -995,6 +1018,7 @@ fn lower_lifecycle_with_ctx(
         return_ty: "void".into(),
         name: method_name.into(),
         params: cs_params,
+        where_clauses: vec![],
         body,
         source_span: Some(body_block.span),
     }
@@ -1023,7 +1047,7 @@ fn lifecycle_method_name(kind: LifecycleKind) -> &'static str {
 
 fn lower_func_member(m: &Member, callable_signatures: &HashMap<String, CallableSignature>) -> CsMember {
     match m {
-        Member::Func { visibility, is_override, name, params, return_ty, body, .. } => {
+        Member::Func { visibility, is_override, name, type_params, where_clauses, params, return_ty, body, .. } => {
             let ret = return_ty.as_ref().map(|t| lower_type(t)).unwrap_or("void".into());
             let ps: Vec<CsParam> = params.iter().map(|p| CsParam {
                 ty: lower_type(&p.ty), name: p.name.clone(), default: None,
@@ -1049,12 +1073,16 @@ fn lower_func_member(m: &Member, callable_signatures: &HashMap<String, CallableS
                 }
             };
 
+            // Build method name with optional type parameters
+            let cs_name = lower_func_name_with_generics(name, type_params);
+
             CsMember::Method {
                 attributes: vec![],
                 modifiers: mods,
                 return_ty: ret,
-                name: name.clone(),
+                name: cs_name,
                 params: ps,
+                where_clauses: lower_where_clauses(where_clauses),
                 body: cs_body,
                 source_span: Some(member_span(m)),
             }
@@ -1087,6 +1115,7 @@ fn lower_intrinsic_func(
         return_ty: ret,
         name: name.into(),
         params: ps,
+        where_clauses: vec![],
         body: vec![CsStmt::Raw(code.into(), Some(span))],
         source_span: Some(span),
     }
@@ -1108,6 +1137,7 @@ fn lower_intrinsic_coroutine(name: &str, params: &[Param], code: &str, span: Spa
         return_ty: "System.Collections.IEnumerator".into(),
         name: name.into(),
         params: ps,
+        where_clauses: vec![],
         body: vec![CsStmt::Raw(code.into(), Some(span))],
         source_span: Some(span),
     }
@@ -1120,7 +1150,7 @@ fn lower_intrinsic_coroutine(name: &str, params: &[Param], code: &str, span: Spa
 /// component-level `ComponentCtx`.
 fn lower_func_member_with_ctx(m: &Member, ctx: &mut ComponentCtx) -> CsMember {
     match m {
-        Member::Func { visibility, is_override, name, params, return_ty, body, .. } => {
+        Member::Func { visibility, is_override, name, type_params, where_clauses, params, return_ty, body, .. } => {
             let ret = return_ty.as_ref().map(|t| lower_type(t)).unwrap_or("void".into());
             let ps: Vec<CsParam> = params.iter().map(|p| CsParam {
                 ty: lower_type(&p.ty), name: p.name.clone(), default: None,
@@ -1143,12 +1173,16 @@ fn lower_func_member_with_ctx(m: &Member, ctx: &mut ComponentCtx) -> CsMember {
                 }
             };
 
+            // Build method name with optional type parameters
+            let cs_name = lower_func_name_with_generics(name, type_params);
+
             CsMember::Method {
                 attributes: vec![],
                 modifiers: mods,
                 return_ty: ret,
-                name: name.clone(),
+                name: cs_name,
                 params: ps,
+                where_clauses: lower_where_clauses(where_clauses),
                 body: cs_body,
                 source_span: Some(member_span(m)),
             }
@@ -1178,6 +1212,7 @@ fn lower_coroutine_with_ctx(
         return_ty: "System.Collections.IEnumerator".into(),
         name: name.into(),
         params: ps,
+        where_clauses: vec![],
         body: cs_body,
         source_span: Some(body.span),
     }
@@ -1209,6 +1244,7 @@ fn lower_coroutine(
         return_ty: "System.Collections.IEnumerator".into(),
         name: name.into(),
         params: ps,
+        where_clauses: vec![],
         body: cs_body,
         source_span: Some(body.span),
     }
@@ -2483,6 +2519,7 @@ fn cleanup_methods(records: &[SubscriptionRecord]) -> Vec<CsMember> {
             return_ty: "void".into(),
             name: "__prsm_cleanup_disable".into(),
             params: vec![],
+            where_clauses: vec![],
             body,
             source_span: first_span,
         });
@@ -2502,6 +2539,7 @@ fn cleanup_methods(records: &[SubscriptionRecord]) -> Vec<CsMember> {
             return_ty: "void".into(),
             name: "__prsm_cleanup_destroy".into(),
             params: vec![],
+            where_clauses: vec![],
             body,
             source_span: first_span,
         });
@@ -2763,6 +2801,7 @@ fn inject_or_synthesize(cs_members: &mut Vec<CsMember>, method_name: &str, call:
         return_ty: "void".into(),
         name: method_name.into(),
         params: vec![],
+        where_clauses: vec![],
         body: vec![CsStmt::Expr(call.into(), None)],
         source_span: None,
     });
@@ -2805,5 +2844,24 @@ fn lower_destructure_val(
         lines.push(format!("var {} = {}.{};", name, tmp, name));
     }
     CsStmt::Raw(lines.join("\n"), source_span)
+}
+
+// ── Generic helpers ────────────────────────────────────────────
+
+/// Lower a list of `WhereClause` into C# where clause strings.
+fn lower_where_clauses(clauses: &[WhereClause]) -> Vec<String> {
+    clauses
+        .iter()
+        .map(|wc| format!("where {} : {}", wc.type_param, wc.constraints.join(", ")))
+        .collect()
+}
+
+/// Build a C# method name with optional type parameters.
+fn lower_func_name_with_generics(name: &str, type_params: &[String]) -> String {
+    if type_params.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}<{}>", name, type_params.join(", "))
+    }
 }
 

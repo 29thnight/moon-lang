@@ -562,4 +562,24 @@ component PlayerHealth : MonoBehaviour {
         assert!(output.contains("public interface IHealable : IDamageable"), "should generate extends");
         assert!(output.contains("void heal(int amount);"), "should generate method");
     }
+
+    #[test]
+    fn test_generic_class() {
+        let src = r#"class Registry<T> where T : Component {
+  func add(item: T) { }
+}"#;
+        let output = compile(src);
+        assert!(output.contains("public class Registry<T> where T : Component"), "should generate generic class with where clause");
+        assert!(output.contains("void add(T item)"), "should generate method with generic param type");
+    }
+
+    #[test]
+    fn test_generic_func() {
+        let src = r#"class Utils {
+  func findAll<T>(): List<T> where T : Component { }
+}"#;
+        let output = compile(src);
+        assert!(output.contains("List<T> findAll<T>()"), "should generate generic method signature");
+        assert!(output.contains("where T : Component"), "should generate where clause on method");
+    }
 }
