@@ -1,7 +1,11 @@
+use crate::ast::{Block, Decl, ElseBranch, Expr, File, FuncBody, Member, Stmt, StringPart, TypeRef, WaitForm, WhenBody, WhenPattern};
 use crate::diagnostics::{Diagnostic, Severity};
 use crate::driver;
 use crate::hir::{HirDefinition, HirDefinitionKind};
+use crate::lexer::lexer::Lexer;
+use crate::lexer::token::{Position, Span};
 use crate::lsp_support;
+use crate::parser::parser::Parser;
 use crate::project_graph::ProjectGraph;
 use crate::project_index::{self, DeclarationSummary, FileSummary, IndexedReference, IndexedSymbol, MemberSummary, ProjectIndex};
 use crate::roslyn_sidecar_client::{RoslynSidecarCommand, StdioRoslynSidecarClient};
@@ -30,6 +34,7 @@ const TEXT_DOCUMENT_COMPLETION: &str = "textDocument/completion";
 const TEXT_DOCUMENT_DEFINITION: &str = "textDocument/definition";
 const TEXT_DOCUMENT_REFERENCES: &str = "textDocument/references";
 const TEXT_DOCUMENT_HOVER: &str = "textDocument/hover";
+const TEXT_DOCUMENT_CODE_ACTION: &str = "textDocument/codeAction";
 const TEXT_DOCUMENT_RENAME: &str = "textDocument/rename";
 const TEXT_DOCUMENT_PREPARE_RENAME: &str = "textDocument/prepareRename";
 const TEXT_DOCUMENT_DOCUMENT_SYMBOL: &str = "textDocument/documentSymbol";
@@ -53,6 +58,9 @@ pub fn run_server() -> Result<(), String> {
         "definitionProvider": true,
         "referencesProvider": true,
         "hoverProvider": true,
+        "codeActionProvider": {
+            "codeActionKinds": ["refactor.rewrite"]
+        },
         "renameProvider": {
             "prepareProvider": true
         },
@@ -128,6 +136,13 @@ struct TextDocumentPosition {
 }
 
 #[derive(Debug, Clone)]
+struct TextDocumentRange {
+    file_path: PathBuf,
+    uri: String,
+    span: Span,
+}
+
+#[derive(Debug, Clone)]
 struct RenamePlan {
     placeholder: String,
     locations: Vec<RenameLocation>,
@@ -144,6 +159,18 @@ struct CSharpLookupTarget {
     type_name: String,
     member_name: Option<String>,
     file_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ExplicitTypeArgCodeAction {
+    title: String,
+    insert_at: Position,
+    insert_text: String,
+}
+
+#[derive(Debug, Clone)]
+struct LspCallableSignature {
+    params: Vec<TypeRef>,
 }
 
 struct RoslynSidecarSession {
@@ -193,6 +220,7 @@ impl PrismLspServer {
             TEXT_DOCUMENT_DEFINITION => self.handle_definition(request),
             TEXT_DOCUMENT_REFERENCES => self.handle_references(request),
             TEXT_DOCUMENT_HOVER => self.handle_hover(request),
+            TEXT_DOCUMENT_CODE_ACTION => self.handle_code_action(request),
             TEXT_DOCUMENT_RENAME => self.handle_rename(request),
             TEXT_DOCUMENT_PREPARE_RENAME => self.handle_prepare_rename(request),
             TEXT_DOCUMENT_DOCUMENT_SYMBOL => self.handle_document_symbols(request),
@@ -400,6 +428,20 @@ impl PrismLspServer {
             ),
             _ => self.send_ok(request.id, Value::Null),
         }
+    }
+
+    fn handle_code_action(&mut self, request: Request) -> Result<(), String> {
+        let target = match parse_text_document_range(&request.params) {
+            Ok(target) => target,
+            Err(error) => return self.send_error(request.id, INVALID_PARAMS, error),
+        };
+
+        let Some(document_text) = self.read_document_text(&target.file_path) else {
+            return self.send_ok(request.id, json!([]));
+        };
+
+        let actions = collect_explicit_type_arg_actions_json(&document_text, &target.uri, target.span);
+        self.send_ok(request.id, Value::Array(actions))
     }
 
     fn handle_prepare_rename(&mut self, request: Request) -> Result<(), String> {
@@ -1271,6 +1313,728 @@ fn parse_text_document_position(params: &Value) -> Result<TextDocumentPosition, 
     Ok(TextDocumentPosition { file_path: normalize_path(&file_path), line, col })
 }
 
+fn parse_text_document_range(params: &Value) -> Result<TextDocumentRange, String> {
+    let uri = params
+        .get("textDocument")
+        .and_then(|text_document| text_document.get("uri"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| "Missing text document URI.".to_string())?
+        .to_string();
+    let file_path = file_uri_to_path(&uri).ok_or_else(|| format!("Invalid file URI: {}", uri))?;
+    let start = params
+        .get("range")
+        .and_then(|range| range.get("start"))
+        .ok_or_else(|| "Missing text document range start.".to_string())?;
+    let end = params
+        .get("range")
+        .and_then(|range| range.get("end"))
+        .ok_or_else(|| "Missing text document range end.".to_string())?;
+
+    let span = Span {
+        start: Position {
+            line: start
+                .get("line")
+                .and_then(Value::as_u64)
+                .map(|value| value as u32 + 1)
+                .ok_or_else(|| "Missing text document range start line.".to_string())?,
+            col: start
+                .get("character")
+                .and_then(Value::as_u64)
+                .map(|value| value as u32 + 1)
+                .ok_or_else(|| "Missing text document range start character.".to_string())?,
+        },
+        end: Position {
+            line: end
+                .get("line")
+                .and_then(Value::as_u64)
+                .map(|value| value as u32 + 1)
+                .ok_or_else(|| "Missing text document range end line.".to_string())?,
+            col: end
+                .get("character")
+                .and_then(Value::as_u64)
+                .map(|value| value as u32 + 1)
+                .ok_or_else(|| "Missing text document range end character.".to_string())?,
+        },
+    };
+
+    Ok(TextDocumentRange {
+        file_path: normalize_path(&file_path),
+        uri,
+        span,
+    })
+}
+
+fn collect_explicit_type_arg_actions_json(source: &str, uri: &str, selection_span: Span) -> Vec<Value> {
+    collect_explicit_type_arg_actions_for_source(source, selection_span)
+        .into_iter()
+        .map(|action| explicit_type_arg_code_action_json(uri, action))
+        .collect()
+}
+
+fn collect_explicit_type_arg_actions_for_source(
+    source: &str,
+    selection_span: Span,
+) -> Vec<ExplicitTypeArgCodeAction> {
+    let file = parse_prsm_file(source);
+    let Some(members) = decl_members(&file.decl) else {
+        return Vec::new();
+    };
+
+    let callable_signatures = collect_lsp_callable_signatures(members);
+    let mut actions = Vec::new();
+    for member in members {
+        collect_member_explicit_type_arg_actions(
+            member,
+            &callable_signatures,
+            selection_span,
+            &mut actions,
+        );
+    }
+
+    let mut deduped = Vec::new();
+    let mut seen = HashSet::new();
+    for action in actions {
+        let key = format!(
+            "{}:{}:{}:{}",
+            action.insert_at.line,
+            action.insert_at.col,
+            action.insert_text,
+            action.title,
+        );
+        if seen.insert(key) {
+            deduped.push(action);
+        }
+    }
+    deduped
+}
+
+fn parse_prsm_file(source: &str) -> File {
+    let mut lexer = Lexer::new(source);
+    let tokens = lexer.tokenize();
+    let mut parser = Parser::new(tokens);
+    parser.parse_file()
+}
+
+fn decl_members(decl: &Decl) -> Option<&[Member]> {
+    match decl {
+        Decl::Component { members, .. }
+        | Decl::Asset { members, .. }
+        | Decl::Class { members, .. } => Some(members.as_slice()),
+        Decl::DataClass { .. } | Decl::Enum { .. } | Decl::Attribute { .. } => None,
+    }
+}
+
+fn collect_lsp_callable_signatures(members: &[Member]) -> HashMap<String, LspCallableSignature> {
+    let mut signatures = HashMap::new();
+
+    for member in members {
+        match member {
+            Member::Func { name, params, .. }
+            | Member::Coroutine { name, params, .. }
+            | Member::IntrinsicFunc { name, params, .. }
+            | Member::IntrinsicCoroutine { name, params, .. } => {
+                signatures.insert(
+                    name.clone(),
+                    LspCallableSignature {
+                        params: params.iter().map(|param| param.ty.clone()).collect(),
+                    },
+                );
+            }
+            _ => {}
+        }
+    }
+
+    signatures
+}
+
+fn collect_member_explicit_type_arg_actions(
+    member: &Member,
+    callable_signatures: &HashMap<String, LspCallableSignature>,
+    selection_span: Span,
+    actions: &mut Vec<ExplicitTypeArgCodeAction>,
+) {
+    match member {
+        Member::Func { return_ty, body, .. } => match body {
+            FuncBody::Block(block) => collect_block_explicit_type_arg_actions(
+                block,
+                callable_signatures,
+                return_ty.as_ref(),
+                selection_span,
+                actions,
+            ),
+            FuncBody::ExprBody(expr) => collect_expr_explicit_type_arg_actions(
+                expr,
+                return_ty.as_ref(),
+                callable_signatures,
+                selection_span,
+                actions,
+            ),
+        },
+        Member::Coroutine { body, .. } | Member::Lifecycle { body, .. } => {
+            collect_block_explicit_type_arg_actions(body, callable_signatures, None, selection_span, actions)
+        }
+        _ => {}
+    }
+}
+
+fn collect_block_explicit_type_arg_actions(
+    block: &Block,
+    callable_signatures: &HashMap<String, LspCallableSignature>,
+    expected_return_ty: Option<&TypeRef>,
+    selection_span: Span,
+    actions: &mut Vec<ExplicitTypeArgCodeAction>,
+) {
+    for stmt in &block.stmts {
+        collect_stmt_explicit_type_arg_actions(
+            stmt,
+            callable_signatures,
+            expected_return_ty,
+            selection_span,
+            actions,
+        );
+    }
+}
+
+fn collect_value_block_explicit_type_arg_actions(
+    block: &Block,
+    callable_signatures: &HashMap<String, LspCallableSignature>,
+    expected_type: Option<&TypeRef>,
+    selection_span: Span,
+    actions: &mut Vec<ExplicitTypeArgCodeAction>,
+) {
+    if block.stmts.is_empty() {
+        return;
+    }
+
+    let last_index = block.stmts.len() - 1;
+    for stmt in &block.stmts[..last_index] {
+        collect_stmt_explicit_type_arg_actions(
+            stmt,
+            callable_signatures,
+            expected_type,
+            selection_span,
+            actions,
+        );
+    }
+
+    match &block.stmts[last_index] {
+        Stmt::Expr { expr, .. } => collect_expr_explicit_type_arg_actions(
+            expr,
+            expected_type,
+            callable_signatures,
+            selection_span,
+            actions,
+        ),
+        Stmt::Return { value: Some(expr), .. } => collect_expr_explicit_type_arg_actions(
+            expr,
+            expected_type,
+            callable_signatures,
+            selection_span,
+            actions,
+        ),
+        other => collect_stmt_explicit_type_arg_actions(
+            other,
+            callable_signatures,
+            expected_type,
+            selection_span,
+            actions,
+        ),
+    }
+}
+
+fn collect_stmt_explicit_type_arg_actions(
+    stmt: &Stmt,
+    callable_signatures: &HashMap<String, LspCallableSignature>,
+    expected_return_ty: Option<&TypeRef>,
+    selection_span: Span,
+    actions: &mut Vec<ExplicitTypeArgCodeAction>,
+) {
+    match stmt {
+        Stmt::ValDecl { ty, init, .. } | Stmt::VarDecl { ty, init: Some(init), .. } => {
+            collect_expr_explicit_type_arg_actions(
+                init,
+                ty.as_ref(),
+                callable_signatures,
+                selection_span,
+                actions,
+            );
+        }
+        Stmt::VarDecl { init: None, .. }
+        | Stmt::StopAll { .. }
+        | Stmt::IntrinsicBlock { .. }
+        | Stmt::Break { .. }
+        | Stmt::Continue { .. }
+        | Stmt::Unlisten { .. } => {}
+        Stmt::Assignment { target, value, .. } => {
+            collect_expr_explicit_type_arg_actions(target, None, callable_signatures, selection_span, actions);
+            collect_expr_explicit_type_arg_actions(value, None, callable_signatures, selection_span, actions);
+        }
+        Stmt::Expr { expr, .. } => {
+            collect_expr_explicit_type_arg_actions(expr, None, callable_signatures, selection_span, actions);
+        }
+        Stmt::If { cond, then_block, else_branch, .. } => {
+            collect_expr_explicit_type_arg_actions(cond, None, callable_signatures, selection_span, actions);
+            collect_block_explicit_type_arg_actions(
+                then_block,
+                callable_signatures,
+                expected_return_ty,
+                selection_span,
+                actions,
+            );
+            if let Some(else_branch) = else_branch {
+                match else_branch {
+                    ElseBranch::ElseBlock(block) => collect_block_explicit_type_arg_actions(
+                        block,
+                        callable_signatures,
+                        expected_return_ty,
+                        selection_span,
+                        actions,
+                    ),
+                    ElseBranch::ElseIf(stmt) => collect_stmt_explicit_type_arg_actions(
+                        stmt,
+                        callable_signatures,
+                        expected_return_ty,
+                        selection_span,
+                        actions,
+                    ),
+                }
+            }
+        }
+        Stmt::When { subject, branches, .. } => {
+            if let Some(subject) = subject {
+                collect_expr_explicit_type_arg_actions(subject, None, callable_signatures, selection_span, actions);
+            }
+            for branch in branches {
+                if let WhenPattern::Expression(expr) = &branch.pattern {
+                    collect_expr_explicit_type_arg_actions(expr, None, callable_signatures, selection_span, actions);
+                }
+                if let Some(guard) = &branch.guard {
+                    collect_expr_explicit_type_arg_actions(guard, None, callable_signatures, selection_span, actions);
+                }
+                match &branch.body {
+                    WhenBody::Block(block) => collect_block_explicit_type_arg_actions(
+                        block,
+                        callable_signatures,
+                        expected_return_ty,
+                        selection_span,
+                        actions,
+                    ),
+                    WhenBody::Expr(expr) => collect_expr_explicit_type_arg_actions(
+                        expr,
+                        None,
+                        callable_signatures,
+                        selection_span,
+                        actions,
+                    ),
+                }
+            }
+        }
+        Stmt::For { iterable, body, .. } => {
+            collect_expr_explicit_type_arg_actions(iterable, None, callable_signatures, selection_span, actions);
+            collect_block_explicit_type_arg_actions(
+                body,
+                callable_signatures,
+                expected_return_ty,
+                selection_span,
+                actions,
+            );
+        }
+        Stmt::DestructureVal { init, .. } => {
+            collect_expr_explicit_type_arg_actions(init, None, callable_signatures, selection_span, actions);
+        }
+        Stmt::While { cond, body, .. } => {
+            collect_expr_explicit_type_arg_actions(cond, None, callable_signatures, selection_span, actions);
+            collect_block_explicit_type_arg_actions(
+                body,
+                callable_signatures,
+                expected_return_ty,
+                selection_span,
+                actions,
+            );
+        }
+        Stmt::Return { value: Some(expr), .. } => {
+            collect_expr_explicit_type_arg_actions(
+                expr,
+                expected_return_ty,
+                callable_signatures,
+                selection_span,
+                actions,
+            );
+        }
+        Stmt::Return { value: None, .. } => {}
+        Stmt::Wait { form, .. } => match form {
+            WaitForm::Duration(expr) | WaitForm::Until(expr) | WaitForm::While(expr) => {
+                collect_expr_explicit_type_arg_actions(expr, None, callable_signatures, selection_span, actions);
+            }
+            WaitForm::NextFrame | WaitForm::FixedFrame => {}
+        },
+        Stmt::Start { call, .. } => {
+            collect_expr_explicit_type_arg_actions(call, None, callable_signatures, selection_span, actions);
+        }
+        Stmt::Stop { target, .. } => {
+            collect_expr_explicit_type_arg_actions(target, None, callable_signatures, selection_span, actions);
+        }
+        Stmt::Listen { event, body, .. } => {
+            collect_expr_explicit_type_arg_actions(event, None, callable_signatures, selection_span, actions);
+            collect_block_explicit_type_arg_actions(body, callable_signatures, None, selection_span, actions);
+        }
+    }
+}
+
+fn collect_expr_explicit_type_arg_actions(
+    expr: &Expr,
+    expected_type: Option<&TypeRef>,
+    callable_signatures: &HashMap<String, LspCallableSignature>,
+    selection_span: Span,
+    actions: &mut Vec<ExplicitTypeArgCodeAction>,
+) {
+    match expr {
+        Expr::IntLit(_, _)
+        | Expr::FloatLit(_, _)
+        | Expr::DurationLit(_, _)
+        | Expr::StringLit(_, _)
+        | Expr::BoolLit(_, _)
+        | Expr::Null(_)
+        | Expr::Ident(_, _)
+        | Expr::This(_)
+        | Expr::IntrinsicExpr { .. } => {}
+        Expr::StringInterp { parts, .. } => {
+            for part in parts {
+                if let StringPart::Expr(expr) = part {
+                    collect_expr_explicit_type_arg_actions(
+                        expr,
+                        None,
+                        callable_signatures,
+                        selection_span,
+                        actions,
+                    );
+                }
+            }
+        }
+        Expr::Binary { left, right, .. } => {
+            collect_expr_explicit_type_arg_actions(left, None, callable_signatures, selection_span, actions);
+            collect_expr_explicit_type_arg_actions(right, None, callable_signatures, selection_span, actions);
+        }
+        Expr::Unary { operand, .. } => {
+            collect_expr_explicit_type_arg_actions(operand, None, callable_signatures, selection_span, actions);
+        }
+        Expr::MemberAccess { receiver, .. } | Expr::SafeCall { receiver, .. } => {
+            collect_expr_explicit_type_arg_actions(receiver, None, callable_signatures, selection_span, actions);
+        }
+        Expr::SafeMethodCall {
+            receiver,
+            name,
+            name_span,
+            type_args,
+            args,
+            ..
+        } => {
+            maybe_push_explicit_type_arg_action(
+                Some(receiver.as_ref()),
+                name,
+                *name_span,
+                type_args,
+                expected_type,
+                selection_span,
+                actions,
+            );
+            collect_expr_explicit_type_arg_actions(receiver, None, callable_signatures, selection_span, actions);
+            let signature = lookup_lsp_callable_signature(Some(receiver.as_ref()), name, callable_signatures);
+            for (index, arg) in args.iter().enumerate() {
+                let arg_expected_type = signature.and_then(|signature| signature.params.get(index));
+                collect_expr_explicit_type_arg_actions(
+                    &arg.value,
+                    arg_expected_type,
+                    callable_signatures,
+                    selection_span,
+                    actions,
+                );
+            }
+        }
+        Expr::NonNullAssert { expr, .. } => {
+            collect_expr_explicit_type_arg_actions(
+                expr,
+                expected_type,
+                callable_signatures,
+                selection_span,
+                actions,
+            );
+        }
+        Expr::Elvis { left, right, .. } => {
+            collect_expr_explicit_type_arg_actions(
+                left,
+                expected_type,
+                callable_signatures,
+                selection_span,
+                actions,
+            );
+            collect_expr_explicit_type_arg_actions(
+                right,
+                expected_type,
+                callable_signatures,
+                selection_span,
+                actions,
+            );
+        }
+        Expr::Call {
+            receiver,
+            name,
+            name_span,
+            type_args,
+            args,
+            ..
+        } => {
+            maybe_push_explicit_type_arg_action(
+                receiver.as_deref(),
+                name,
+                *name_span,
+                type_args,
+                expected_type,
+                selection_span,
+                actions,
+            );
+            if let Some(receiver) = receiver {
+                collect_expr_explicit_type_arg_actions(receiver, None, callable_signatures, selection_span, actions);
+            }
+            let signature = lookup_lsp_callable_signature(receiver.as_deref(), name, callable_signatures);
+            for (index, arg) in args.iter().enumerate() {
+                let arg_expected_type = signature.and_then(|signature| signature.params.get(index));
+                collect_expr_explicit_type_arg_actions(
+                    &arg.value,
+                    arg_expected_type,
+                    callable_signatures,
+                    selection_span,
+                    actions,
+                );
+            }
+        }
+        Expr::IndexAccess { receiver, index, .. } => {
+            collect_expr_explicit_type_arg_actions(receiver, None, callable_signatures, selection_span, actions);
+            collect_expr_explicit_type_arg_actions(index, None, callable_signatures, selection_span, actions);
+        }
+        Expr::IfExpr { cond, then_block, else_block, .. } => {
+            collect_expr_explicit_type_arg_actions(cond, None, callable_signatures, selection_span, actions);
+            collect_value_block_explicit_type_arg_actions(
+                then_block,
+                callable_signatures,
+                expected_type,
+                selection_span,
+                actions,
+            );
+            collect_value_block_explicit_type_arg_actions(
+                else_block,
+                callable_signatures,
+                expected_type,
+                selection_span,
+                actions,
+            );
+        }
+        Expr::WhenExpr { subject, branches, .. } => {
+            if let Some(subject) = subject {
+                collect_expr_explicit_type_arg_actions(subject, None, callable_signatures, selection_span, actions);
+            }
+            for branch in branches {
+                if let WhenPattern::Expression(expr) = &branch.pattern {
+                    collect_expr_explicit_type_arg_actions(expr, None, callable_signatures, selection_span, actions);
+                }
+                if let Some(guard) = &branch.guard {
+                    collect_expr_explicit_type_arg_actions(guard, None, callable_signatures, selection_span, actions);
+                }
+                match &branch.body {
+                    WhenBody::Expr(expr) => collect_expr_explicit_type_arg_actions(
+                        expr,
+                        expected_type,
+                        callable_signatures,
+                        selection_span,
+                        actions,
+                    ),
+                    WhenBody::Block(block) => collect_value_block_explicit_type_arg_actions(
+                        block,
+                        callable_signatures,
+                        expected_type,
+                        selection_span,
+                        actions,
+                    ),
+                }
+            }
+        }
+        Expr::Range { start, end, step, .. } => {
+            collect_expr_explicit_type_arg_actions(start, None, callable_signatures, selection_span, actions);
+            collect_expr_explicit_type_arg_actions(end, None, callable_signatures, selection_span, actions);
+            if let Some(step) = step {
+                collect_expr_explicit_type_arg_actions(step, None, callable_signatures, selection_span, actions);
+            }
+        }
+        Expr::Is { expr, .. } => {
+            collect_expr_explicit_type_arg_actions(expr, None, callable_signatures, selection_span, actions);
+        }
+        Expr::Lambda { body, .. } => {
+            collect_block_explicit_type_arg_actions(body, callable_signatures, None, selection_span, actions);
+        }
+    }
+}
+
+fn maybe_push_explicit_type_arg_action(
+    receiver: Option<&Expr>,
+    name: &str,
+    name_span: Span,
+    type_args: &[TypeRef],
+    expected_type: Option<&TypeRef>,
+    selection_span: Span,
+    actions: &mut Vec<ExplicitTypeArgCodeAction>,
+) {
+    if name.is_empty()
+        || !type_args.is_empty()
+        || !supports_expected_type_inference_lsp(receiver, name)
+        || !selection_targets_span(selection_span, name_span)
+    {
+        return;
+    }
+
+    let Some(expected_type) = expected_type else {
+        return;
+    };
+
+    let explicit_type = format_type_ref_source(&strip_nullable_type_ref(expected_type));
+    if explicit_type.is_empty() || explicit_type == "Unit" {
+        return;
+    }
+
+    actions.push(ExplicitTypeArgCodeAction {
+        title: format!("Add explicit type argument <{}>", explicit_type),
+        insert_at: name_span.end,
+        insert_text: format!("<{}>", explicit_type),
+    });
+}
+
+fn lookup_lsp_callable_signature<'a>(
+    receiver: Option<&Expr>,
+    name: &str,
+    callable_signatures: &'a HashMap<String, LspCallableSignature>,
+) -> Option<&'a LspCallableSignature> {
+    match receiver {
+        None => callable_signatures.get(name),
+        Some(Expr::This(_)) => callable_signatures.get(name),
+        _ => None,
+    }
+}
+
+fn supports_expected_type_inference_lsp(receiver: Option<&Expr>, name: &str) -> bool {
+    match receiver {
+        None => matches!(name, "get" | "require" | "find" | "child" | "parent" | "loadJson"),
+        Some(_) => matches!(
+            name,
+            "getComponent" | "getComponentInChildren" | "getComponentInParent" | "findFirstObjectByType"
+        ),
+    }
+}
+
+fn strip_nullable_type_ref(ty: &TypeRef) -> TypeRef {
+    match ty {
+        TypeRef::Simple { name, span, .. } => TypeRef::Simple {
+            name: name.clone(),
+            nullable: false,
+            span: *span,
+        },
+        TypeRef::Generic { name, type_args, span, .. } => TypeRef::Generic {
+            name: name.clone(),
+            type_args: type_args.clone(),
+            nullable: false,
+            span: *span,
+        },
+        TypeRef::Qualified {
+            qualifier,
+            name,
+            span,
+            ..
+        } => TypeRef::Qualified {
+            qualifier: qualifier.clone(),
+            name: name.clone(),
+            nullable: false,
+            span: *span,
+        },
+    }
+}
+
+fn format_type_ref_source(ty: &TypeRef) -> String {
+    match ty {
+        TypeRef::Simple { name, nullable, .. } => format_nullable_type_ref_source(name.clone(), *nullable),
+        TypeRef::Generic {
+            name,
+            type_args,
+            nullable,
+            ..
+        } => format_nullable_type_ref_source(
+            format!(
+                "{}<{}>",
+                name,
+                type_args
+                    .iter()
+                    .map(format_type_ref_source)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            *nullable,
+        ),
+        TypeRef::Qualified {
+            qualifier,
+            name,
+            nullable,
+            ..
+        } => format_nullable_type_ref_source(format!("{}.{}", qualifier, name), *nullable),
+    }
+}
+
+fn format_nullable_type_ref_source(base: String, nullable: bool) -> String {
+    if nullable {
+        format!("{}?", base)
+    } else {
+        base
+    }
+}
+
+fn selection_targets_span(selection_span: Span, target_span: Span) -> bool {
+    if positions_equal(selection_span.start, selection_span.end) {
+        return point_within_span(selection_span.start, target_span);
+    }
+
+    spans_overlap(selection_span, target_span)
+}
+
+fn positions_equal(left: Position, right: Position) -> bool {
+    left.line == right.line && left.col == right.col
+}
+
+fn point_within_span(position: Position, span: Span) -> bool {
+    compare_positions(position, span.start) != std::cmp::Ordering::Less
+        && compare_positions(position, span.end) != std::cmp::Ordering::Greater
+}
+
+fn spans_overlap(left: Span, right: Span) -> bool {
+    compare_positions(left.end, right.start) != std::cmp::Ordering::Less
+        && compare_positions(right.end, left.start) != std::cmp::Ordering::Less
+}
+
+fn explicit_type_arg_code_action_json(uri: &str, action: ExplicitTypeArgCodeAction) -> Value {
+    let mut changes = HashMap::new();
+    changes.insert(
+        uri.to_string(),
+        vec![json!({
+            "range": lsp_text_edit_range_json(action.insert_at, action.insert_at),
+            "newText": action.insert_text,
+        })],
+    );
+
+    json!({
+        "title": action.title,
+        "kind": "refactor.rewrite",
+        "isPreferred": true,
+        "edit": {
+            "changes": changes,
+        },
+    })
+}
+
 fn build_hover_markdown(
     symbol_at: Option<&IndexedSymbol>,
     reference_at: Option<&IndexedReference>,
@@ -2036,6 +2800,19 @@ fn lsp_range_json(span: crate::lexer::token::Span) -> Value {
     })
 }
 
+fn lsp_text_edit_range_json(start: Position, end: Position) -> Value {
+    json!({
+        "start": {
+            "line": start.line.saturating_sub(1),
+            "character": start.col.saturating_sub(1),
+        },
+        "end": {
+            "line": end.line.saturating_sub(1),
+            "character": end.col.saturating_sub(1),
+        }
+    })
+}
+
 fn diagnostic_json(diagnostic: &Diagnostic, line_lengths: &[usize]) -> Value {
     let safe_lengths = if line_lengths.is_empty() {
         vec![0usize]
@@ -2082,7 +2859,11 @@ fn clamp_index(value: usize, max: usize) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_sidecar_hover_section, merge_completion_items, parse_sidecar_args, prsm_label_for_sidecar_item};
+    use super::{
+        collect_explicit_type_arg_actions_for_source, format_sidecar_hover_section, merge_completion_items,
+        parse_sidecar_args, prsm_label_for_sidecar_item,
+    };
+    use crate::lexer::token::{Position, Span};
     use crate::roslyn_sidecar_protocol::{SidecarCompletionItemKind, SidecarSymbolKind, SidecarSymbolSource, UnityCompletionItem, UnityHoverResult};
     use serde_json::json;
 
@@ -2148,6 +2929,105 @@ mod tests {
         assert!(markdown.contains("[Docs](https://example.com/player)"));
         assert!(!markdown.contains("**Symbol:**"));
         assert!(!markdown.contains("**Assembly:**"));
+    }
+
+    #[test]
+    fn lsp_code_actions_add_explicit_type_arg_for_typed_initializer() {
+        let actions = explicit_type_arg_actions_from_marked_source(
+            r#"component Player : MonoBehaviour {
+    awake {
+        val weapon: WeaponData = |get|()
+    }
+}"#,
+        );
+
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].title, "Add explicit type argument <WeaponData>");
+        assert_eq!(actions[0].insert_text, "<WeaponData>");
+    }
+
+    #[test]
+    fn lsp_code_actions_add_explicit_type_arg_for_expr_body_return() {
+        let actions = explicit_type_arg_actions_from_marked_source(
+            r#"component Player : MonoBehaviour {
+    func load(): WeaponData = |get|()
+}"#,
+        );
+
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].insert_text, "<WeaponData>");
+    }
+
+    #[test]
+    fn lsp_code_actions_add_explicit_type_arg_for_argument_context() {
+        let actions = explicit_type_arg_actions_from_marked_source(
+            r#"component Player : MonoBehaviour {
+    func equip() {
+        setCurrent(|get|())
+    }
+
+    func setCurrent(weapon: WeaponData) {
+    }
+}"#,
+        );
+
+        assert_eq!(actions.len(), 1);
+        assert_eq!(actions[0].insert_text, "<WeaponData>");
+    }
+
+    #[test]
+    fn lsp_code_actions_skip_calls_with_existing_type_args() {
+        let actions = explicit_type_arg_actions_from_marked_source(
+            r#"component Player : MonoBehaviour {
+    func awake() {
+        val weapon: WeaponData = |get|<WeaponData>()
+    }
+}"#,
+        );
+
+        assert!(actions.is_empty());
+    }
+
+    fn explicit_type_arg_actions_from_marked_source(marked: &str) -> Vec<super::ExplicitTypeArgCodeAction> {
+        let (source, selection) = source_and_selection_from_markers(marked);
+        collect_explicit_type_arg_actions_for_source(&source, selection)
+    }
+
+    fn source_and_selection_from_markers(marked: &str) -> (String, Span) {
+        let mut source = String::new();
+        let mut start = None;
+        let mut end = None;
+        let mut line = 1u32;
+        let mut col = 1u32;
+
+        for ch in marked.chars() {
+            if ch == '|' {
+                if start.is_none() {
+                    let position = Position { line, col };
+                    start = Some(position);
+                    end = Some(position);
+                } else {
+                    end = Some(Position { line, col });
+                }
+                continue;
+            }
+
+            source.push(ch);
+            if ch == '\n' {
+                line += 1;
+                col = 1;
+            } else {
+                col += 1;
+            }
+        }
+
+        (
+            source,
+            Span {
+                start: start.expect("missing start marker"),
+                end: end.expect("missing end marker"),
+            },
+        )
     }
 }
 
