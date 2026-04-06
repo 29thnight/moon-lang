@@ -396,37 +396,67 @@ if collider is BoxCollider {
 
 ---
 
-## 4. 제안 v4 범위
+## 4. v4 확정 범위
 
-### Tier 1 (핵심)
+### 문법 확장 (syntax-gap-analysis.md 전체)
 
-| # | 기능 | 유형 | 근거 |
-|---|------|------|------|
-| 1 | **try/catch/finally** | 문법 | 에러 처리 기본. 없으면 모든 예외 처리가 intrinsic으로 빠짐 |
-| 2 | **lambda/클로저** | 문법 | `val onClick = { x => log(x) }`. 이벤트 콜백, LINQ, 범용 함수형 |
-| 3 | **static 멤버 + const** | 문법 | 유틸리티 함수, 상수 정의. `static func`, `const val` |
-| 4 | **컬렉션 리터럴 + 타입 캐스팅** | 문법 | `[1, 2, 3]` 초기화, `as` 캐스팅, 타입 변환 |
-| 5 | **async/await** | 비동기 | 코루틴 한계를 넘는 비동기. UniTask 통합 |
-| 6 | **state machine** | 패턴 | 게임 개발 핵심 패턴. 60줄→15줄 |
-| 7 | **에러 메시지 개선** | DX | Rust/Elm 스타일 친절한 에러 + help 힌트 |
-| 8 | **옵티마이저 강화** | 성능 | v3 인프라 위에 실용적 규칙 추가 |
+**반드시 구현:**
 
-### Tier 2 (고가치)
+| # | 기능 | PrSM 표현 | 복잡도 |
+|---|------|----------|--------|
+| 1 | try/catch/finally + throw | `try { } catch (e: Type) { } finally { }` | 낮음 |
+| 2 | lambda/클로저 | `{ x => expr }`, 후행 lambda, `it`, 함수 타입 `(Int) => Unit` | 중간 |
+| 3 | static + const | `static func`, `static val`, `const PI: Float = 3.14` | 낮음 |
+| 4 | 컬렉션 리터럴 | `[1, 2, 3]`, `{"key": value}`, `arrayOf()`, `setOf()` | 중간 |
+| 5 | 타입 캐스팅 | `as Type?` (안전), `as! Type` (강제), 스마트 캐스트, `.toFloat()` | 낮음 |
+| 6 | property get/set | `var hp: Int` + `get`/`set(value)` 블록, `field` 키워드 | 중간 |
+| 7 | 확장 함수 | `extend Transform { func resetLocal() { } }` | 중간 |
+| 8 | abstract/sealed/open | `abstract class`, `sealed class`, `open func` | 중간 |
+| 9 | tuple | `(Int, String)` 반환, `val (a, b) = func()` 구조 분해 | 낮음 |
+| 10 | use (IDisposable) | `use val stream = FileStream(path)` | 낮음 |
+| 11 | struct (값 타입) | `struct DamageInfo(amount: Int, type: DamageType)` | 중간 |
+| 12 | delegate/event | `event onDamaged: (Int) => Unit`, `+=`/`-=` | 중간 |
+| 13 | operator overloading | `operator plus(other: Vec2i): Vec2i` | 중간 |
+| 14 | indexer | `operator get(index: Int): T`, `operator set(index: Int, value: T)` | 낮음 |
+| 15 | typealias | `typealias Position = Vector3` | 낮음 |
+| 16 | raw string | `"""multi-line"""` | 낮음 |
+| 17 | in 연산자 | `if x in 1..10`, `if name in list` | 낮음 |
+| 18 | OR 패턴 | `Direction.Up, Direction.Down => handleVertical()` | 낮음 |
+| 19 | 범위 패턴 | `in 90..100 => "A"` | 낮음 |
+| 20 | null 병합 대입 | `instance ?:= create()` | 낮음 |
+| 21 | 디폴트 인터페이스 구현 | `interface IMovable { func move() { default impl } }` | 높음 |
 
-| # | 기능 | 유형 | 근거 |
-|---|------|------|------|
-| 9 | **command** | 패턴 | 에디터 도구/턴제 게임에 즉시 유용 |
-| 10 | **bind (MVVM)** | 패턴 | UI 코드 비중이 크지만 UI Toolkit 안정화에 따라 |
-| 11 | **직렬화** | 데이터 | 세이브/로드 보일러플레이트 제거 |
+### 비동기 + 성능 (카테고리 B 전체)
 
-### Tier 3 (미래/연구)
-
-| # | 기능 | 근거 |
+| # | 기능 | 설명 |
 |---|------|------|
-| 8 | 디버거 통합 | DAP 어댑터 별도 프로젝트급 |
-| 9 | 리팩토링 도구 | HIR 보강 후 가능 |
-| 10 | Hot Reload | IL 패칭 인프라 별도 프로젝트급 |
-| 11 | Burst 분석 | DOTS 사용자 한정 |
+| 22 | **async/await** | UniTask 통합, `async func`, `await` 키워드 |
+| 23 | **옵티마이저 강화** | GetComponent 호이스팅, LINQ→for, dead code 제거 등 6규칙 |
+| 24 | **Burst 호환 분석** | W020/W021 — Burst 비호환 코드 정적 감지 |
+
+### 패턴 언어화 (카테고리 A 중 bind 포함)
+
+| # | 기능 | 설명 |
+|---|------|------|
+| 25 | **state machine** | `state machine { idle { enter/execute/exit } }` |
+| 26 | **command** | `command MoveCmd { execute/undo }` |
+| 27 | **bind (MVVM)** | `bind healthBar.value to player.hp / player.maxHp` |
+
+### 개발자 경험 (카테고리 C 전체)
+
+| # | 기능 | 설명 |
+|---|------|------|
+| 28 | **에러 메시지 개선** | Rust/Elm 스타일 + help 힌트 + 소스 위치 표시 |
+| 29 | **리팩토링 도구** | Extract Method/Component, Inline, Convert to Interface |
+| 30 | **디버거 통합** | VS Code DAP — .prsm 브레이크포인트, 변수 검사 |
+
+### v5로 이관 (연구 항목)
+
+| 기능 | 사유 |
+|------|------|
+| Hot Reload | IL 패칭 인프라가 별도 프로젝트급 |
+| 직렬화 자동 생성 | 우선순위 낮음 — 기존 JSON 라이브러리로 충분 |
+| config 선언 | 우선순위 낮음 — 기존 asset으로 충분 |
 
 ---
 
@@ -444,9 +474,16 @@ v2.1에서 확정된 프로세스를 따른다:
 
 ## 6. 릴리스 네이밍
 
-| 옵션 | 설명 |
-|------|------|
-| Prism v1.1.0 | Language 4지만 기존 코드 breaking change 없으면 minor |
-| Prism v2.0.0 | Language 4 = 새로운 major. async/await은 패러다임 변화 |
+**Prism v2.0.0** — Language 4는 async/await, lambda, 타입 시스템 확장 등 패러다임 변화를 포함하므로 major 버전 업.
 
-→ async/await 포함 여부에 따라 결정. 포함하면 v2.0.0이 적절.
+## 7. 총 기능 수
+
+| 카테고리 | 수 | 핵심 기능 |
+|---------|---|----------|
+| 문법 확장 | 21 | try/catch, lambda, static, 컬렉션, 캐스팅, property, extend, abstract/sealed, tuple, struct, event, operator, ... |
+| 비동기+성능 | 3 | async/await, 옵티마이저 강화, Burst 분석 |
+| 패턴 언어화 | 3 | state machine, command, bind |
+| 개발자 경험 | 3 | 에러 메시지, 리팩토링, 디버거 |
+| **합계** | **30** | |
+
+v5 이관: Hot Reload(연구), 직렬화, config 선언

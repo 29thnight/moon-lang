@@ -161,7 +161,7 @@ class MathHelper {
 }
 ```
 
-**권장: 방안 A** — C# lowering이 직관적이고, 학습 곡선이 낮음.
+**권장: 방안 A** — C# lowering이 직관적이고, 학습 곡선이 낮음.(선택)
 
 ### 3.2 const
 
