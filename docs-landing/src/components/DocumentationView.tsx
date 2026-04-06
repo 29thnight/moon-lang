@@ -294,8 +294,13 @@ const renderInlineMarkdown = (text: string) => {
 };
 
 const renderTable = (rows: string[], key: string | number) => {
-  const tableData = rows.map(row => 
-    row.trim().split('|').filter(cell => cell.trim() !== '' || row.indexOf('|') !== row.lastIndexOf('|')).map(cell => cell.trim())
+  const ESCAPED_PIPE = '\x00PIPE\x00';
+  const tableData = rows.map(row =>
+    row.trim()
+      .replace(/\\\|/g, ESCAPED_PIPE)  // preserve escaped pipes
+      .split('|')
+      .filter(cell => cell.trim() !== '' || row.indexOf('|') !== row.lastIndexOf('|'))
+      .map(cell => cell.trim().replace(new RegExp(ESCAPED_PIPE, 'g'), '|'))
   );
   
   // Filter out the |---|---| separator row
