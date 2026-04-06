@@ -7,6 +7,10 @@ namespace Prism.Editor
 {
     internal static class PrismStackTraceFormatter
     {
+        private static readonly Regex DiagnosticLocationRegex = new Regex(
+            @"(?m)^(?<path>.*?\.prsm)\((?<line>\d+),(?<col>\d+)\):",
+            RegexOptions.Compiled);
+
         private static readonly Regex PrismFrameRegex = new Regex(
             @"\(at\s+(?<path>.*?\.prsm):(?<line>\d+)\)\s+\[PrSM col\s+(?<col>\d+)\]",
             RegexOptions.Compiled);
@@ -96,13 +100,17 @@ namespace Prism.Editor
                 return false;
             }
 
-            Match match = PrismFrameRegex.Match(text);
+            Match match = DiagnosticLocationRegex.Match(text);
             if (!match.Success)
             {
-                match = DotNetPrismFrameRegex.Match(text);
+                match = PrismFrameRegex.Match(text);
                 if (!match.Success)
                 {
-                    return false;
+                    match = DotNetPrismFrameRegex.Match(text);
+                    if (!match.Success)
+                    {
+                        return false;
+                    }
                 }
             }
 

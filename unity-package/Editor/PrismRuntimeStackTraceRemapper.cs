@@ -48,14 +48,7 @@ namespace Prism.Editor
 
             // Cache the source location so OnOpenPrSMAsset can navigate correctly even when
             // m_ActiveText is empty at click time (console loses focus on click).
-            if (PrismStackTraceFormatter.TryExtractFirstPrSMLocation(remappedMessage, out string cachedSourcePath, out int cachedLine, out int cachedCol))
-            {
-                string fullSourcePath = ResolveFullSourcePath(projectRoot, cachedSourcePath);
-                if (!string.IsNullOrWhiteSpace(fullSourcePath))
-                {
-                    s_LocationCache[fullSourcePath] = (cachedLine, cachedCol);
-                }
-            }
+            TryCacheRemappedLocation(projectRoot, remappedMessage, out _);
 
             try
             {
@@ -90,6 +83,25 @@ namespace Prism.Editor
             }
 
             return false;
+        }
+
+        internal static bool TryCacheRemappedLocation(string projectRoot, string remappedMessage, out string fullSourcePath)
+        {
+            fullSourcePath = null;
+
+            if (!PrismStackTraceFormatter.TryExtractFirstPrSMLocation(remappedMessage, out string cachedSourcePath, out int cachedLine, out int cachedCol))
+            {
+                return false;
+            }
+
+            fullSourcePath = ResolveFullSourcePath(projectRoot, cachedSourcePath);
+            if (string.IsNullOrWhiteSpace(fullSourcePath))
+            {
+                return false;
+            }
+
+            s_LocationCache[fullSourcePath] = (cachedLine, cachedCol);
+            return true;
         }
 
         private static string ResolveFullSourcePath(string projectRoot, string sourcePath)
