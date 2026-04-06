@@ -881,6 +881,9 @@ impl Analyzer {
                 self.analyze_block(body);
                 self.scopes.pop_scope();
             }
+            Stmt::Unlisten { .. } => {
+                // No semantic analysis needed for unlisten — resolved during lowering
+            }
             Stmt::IntrinsicBlock { .. } => {
                 // No analysis — raw C# is user's responsibility
             }

@@ -137,6 +137,8 @@ pub enum TokenKind {
 
     // === Keywords: event ===
     Listen,
+    Unlisten,
+    Manual,
 
     // === Keywords: intrinsic ===
     Intrinsic,
@@ -254,6 +256,8 @@ impl TokenKind {
                 | TokenKind::Continue
                 | TokenKind::Is
                 | TokenKind::Listen
+                | TokenKind::Unlisten
+                | TokenKind::Manual
                 | TokenKind::Intrinsic
                 | TokenKind::Using
                 | TokenKind::Null
@@ -321,6 +325,8 @@ pub fn lookup_keyword(ident: &str) -> Option<TokenKind> {
         "continue" => Some(TokenKind::Continue),
         "is" => Some(TokenKind::Is),
         "listen" => Some(TokenKind::Listen),
+        "unlisten" => Some(TokenKind::Unlisten),
+        "manual" => Some(TokenKind::Manual),
         "intrinsic" => Some(TokenKind::Intrinsic),
         "using" => Some(TokenKind::Using),
         "null" => Some(TokenKind::Null),

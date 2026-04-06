@@ -76,11 +76,12 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                 ));
             }
 
-            // Lower remaining members
+            // Lower remaining members — use ComponentCtx to collect listen subscriptions.
+            let mut listen_ctx = ComponentCtx::new();
             for m in members {
                 match m {
                     Member::Lifecycle { kind, params, body, .. } if *kind != LifecycleKind::Awake => {
-                        cs_members.push(lower_lifecycle(*kind, params, body));
+                        cs_members.push(lower_lifecycle_with_ctx(*kind, params, body, &mut listen_ctx));
                     }
                     Member::Func { .. } => {
                         cs_members.push(lower_func_member(m));
@@ -96,6 +97,20 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                     }
                     _ => {}
                 }
+            }
+
+            // Emit private handler fields and cleanup methods if any v2 listen stmts were found.
+            if !listen_ctx.records.is_empty() {
+                // Insert private handler fields right before the methods (after existing fields).
+                let field_insert_pos = cs_members.iter().position(|m| matches!(m, CsMember::Method { .. } | CsMember::Property { .. })).unwrap_or(cs_members.len());
+                let fields = subscription_fields(&listen_ctx.records);
+                for (i, f) in fields.into_iter().enumerate() {
+                    cs_members.insert(field_insert_pos + i, f);
+                }
+                // Inject cleanup calls into OnDisable / OnDestroy (or synthesize).
+                inject_cleanup_calls(&mut cs_members, &listen_ctx.records);
+                // Append cleanup implementation methods.
+                cs_members.extend(cleanup_methods(&listen_ctx.records));
             }
 
             if needs_expr_helper(&cs_members) {
@@ -834,8 +849,52 @@ fn lower_awake(
 
 // ── Lifecycle lowering ──────────────────────────────────────────
 
+#[allow(dead_code)]
 fn lower_lifecycle(kind: LifecycleKind, params: &[Param], body_block: &Block) -> CsMember {
-    let method_name = match kind {
+    let method_name = lifecycle_method_name(kind);
+    let cs_params: Vec<CsParam> = params.iter().map(|p| CsParam {
+        ty: lower_type(&p.ty),
+        name: p.name.clone(),
+        default: None,
+    }).collect();
+    let body: Vec<CsStmt> = body_block.stmts.iter().map(|s| lower_stmt(s)).collect();
+    CsMember::Method {
+        attributes: vec![],
+        modifiers: "private".into(),
+        return_ty: "void".into(),
+        name: method_name.into(),
+        params: cs_params,
+        body,
+        source_span: Some(body_block.span),
+    }
+}
+
+fn lower_lifecycle_with_ctx(
+    kind: LifecycleKind,
+    params: &[Param],
+    body_block: &Block,
+    ctx: &mut ComponentCtx,
+) -> CsMember {
+    let method_name = lifecycle_method_name(kind);
+    let cs_params: Vec<CsParam> = params.iter().map(|p| CsParam {
+        ty: lower_type(&p.ty),
+        name: p.name.clone(),
+        default: None,
+    }).collect();
+    let body = lower_stmts_with_ctx(&body_block.stmts, ctx);
+    CsMember::Method {
+        attributes: vec![],
+        modifiers: "private".into(),
+        return_ty: "void".into(),
+        name: method_name.into(),
+        params: cs_params,
+        body,
+        source_span: Some(body_block.span),
+    }
+}
+
+fn lifecycle_method_name(kind: LifecycleKind) -> &'static str {
+    match kind {
         LifecycleKind::Start => "Start",
         LifecycleKind::Update => "Update",
         LifecycleKind::FixedUpdate => "FixedUpdate",
@@ -849,25 +908,7 @@ fn lower_lifecycle(kind: LifecycleKind, params: &[Param], body_block: &Block) ->
         LifecycleKind::OnCollisionEnter => "OnCollisionEnter",
         LifecycleKind::OnCollisionExit => "OnCollisionExit",
         LifecycleKind::OnCollisionStay => "OnCollisionStay",
-        LifecycleKind::Awake => "Awake", // shouldn't happen here
-    };
-
-    let cs_params: Vec<CsParam> = params.iter().map(|p| CsParam {
-        ty: lower_type(&p.ty),
-        name: p.name.clone(),
-        default: None,
-    }).collect();
-
-    let body: Vec<CsStmt> = body_block.stmts.iter().map(|s| lower_stmt(s)).collect();
-
-    CsMember::Method {
-        attributes: vec![],
-        modifiers: "private".into(),
-        return_ty: "void".into(),
-        name: method_name.into(),
-        params: cs_params,
-        body,
-        source_span: Some(body_block.span),
+        LifecycleKind::Awake => "Awake",
     }
 }
 
@@ -997,6 +1038,7 @@ fn stmt_span(stmt: &Stmt) -> Span {
         | Stmt::Stop { span, .. }
         | Stmt::StopAll { span, .. }
         | Stmt::Listen { span, .. }
+        | Stmt::Unlisten { span, .. }
         | Stmt::IntrinsicBlock { span, .. }
         | Stmt::Break { span, .. }
         | Stmt::Continue { span, .. } => *span,
@@ -1227,21 +1269,16 @@ fn lower_stmt(stmt: &Stmt) -> CsStmt {
         Stmt::StopAll { .. } => {
             CsStmt::Expr("StopAllCoroutines()".into(), source_span)
         }
-        Stmt::Listen { event, params, body, .. } => {
-            let event_str = lower_expr(event);
-            let params_str = if params.is_empty() {
-                String::new()
-            } else {
-                format!("({})", params.join(", "))
-            };
-            let body_stmts: Vec<String> = body.stmts.iter()
-                .map(|s| format!("    {};", stmt_to_inline(&lower_stmt(s))))
-                .collect();
-            let lambda_body = body_stmts.join("\n");
-            CsStmt::Expr(format!(
-                "{}.AddListener({} => {{\n{}\n}})",
-                event_str, if params.is_empty() { "()" } else { &params_str }, lambda_body
-            ), source_span)
+        Stmt::Listen { event, params, body, lifetime, bound_name, .. } => {
+            lower_listen_stmt(event, params, body, lifetime, bound_name.as_deref(), source_span, None)
+        }
+        Stmt::Unlisten { token, .. } => {
+            // Without surrounding context we cannot resolve the token.
+            // Emit a TODO comment; resolved versions are emitted by lower_decl Component path.
+            CsStmt::Raw(
+                format!("/* unlisten {} — resolved at component level */", token),
+                source_span,
+            )
         }
         Stmt::IntrinsicBlock { code, .. } => {
             CsStmt::Raw(code.clone(), source_span)
@@ -1700,3 +1737,270 @@ fn capitalize(s: &str) -> String {
         Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
     }
 }
+
+// ---------------------------------------------------------------------------
+// v2 listen lifetime management — Component-level subscription tracking
+// ---------------------------------------------------------------------------
+
+/// Tracks a single `listen … until disable/destroy` or `listen … manual` subscription
+/// discovered while lowering a Component's members.
+struct SubscriptionRecord {
+    /// Private field name, e.g. `_prsm_h0`.
+    field_name: String,
+    /// Lowered event expression, e.g. `button.onClick`.
+    event_expr: String,
+    /// How the subscription is cleaned up.
+    cleanup: SubscriptionCleanup,
+}
+
+enum SubscriptionCleanup {
+    OnDisable,
+    OnDestroy,
+    Manual { bound_name: String },
+}
+
+/// Mutable context threaded through Component lowering.
+struct ComponentCtx {
+    next_id: usize,
+    records: Vec<SubscriptionRecord>,
+}
+
+impl ComponentCtx {
+    fn new() -> Self {
+        ComponentCtx { next_id: 0, records: Vec::new() }
+    }
+
+    fn alloc_handler(&mut self) -> String {
+        let name = format!("_prsm_h{}", self.next_id);
+        self.next_id += 1;
+        name
+    }
+}
+
+/// Lower a block of statements with Component-level subscription context.
+/// This replaces `lower_stmt` calls inside lifecycle/func bodies when inside a Component.
+fn lower_stmts_with_ctx(stmts: &[Stmt], ctx: &mut ComponentCtx) -> Vec<CsStmt> {
+    let mut out = Vec::new();
+    for stmt in stmts {
+        out.extend(lower_stmt_with_ctx(stmt, ctx));
+    }
+    out
+}
+
+fn lower_stmt_with_ctx(stmt: &Stmt, ctx: &mut ComponentCtx) -> Vec<CsStmt> {
+    let source_span = Some(stmt_span(stmt));
+    match stmt {
+        Stmt::Listen { event, params, body, lifetime, bound_name, .. } => {
+            match lifetime {
+                ListenLifetime::Register => {
+                    vec![lower_listen_stmt(event, params, body, lifetime, None, source_span, None)]
+                }
+                ListenLifetime::UntilDisable | ListenLifetime::UntilDestroy | ListenLifetime::Manual => {
+                    let handler = ctx.alloc_handler();
+                    let event_str = lower_expr(event);
+                    let cleanup = match lifetime {
+                        ListenLifetime::UntilDisable => SubscriptionCleanup::OnDisable,
+                        ListenLifetime::UntilDestroy => SubscriptionCleanup::OnDestroy,
+                        ListenLifetime::Manual => SubscriptionCleanup::Manual {
+                            bound_name: bound_name.clone().unwrap_or_else(|| handler.clone()),
+                        },
+                        _ => unreachable!(),
+                    };
+                    ctx.records.push(SubscriptionRecord {
+                        field_name: handler.clone(),
+                        event_expr: event_str.clone(),
+                        cleanup,
+                    });
+                    // Emit: fieldName = (params) => { body }; event.AddListener(fieldName);
+                    let stmts_vec = lower_listen_stmt(event, params, body, lifetime, None, source_span, Some(&handler));
+                    vec![stmts_vec]
+                }
+            }
+        }
+        // Recurse into control-flow so nested listens are also handled.
+        Stmt::If { cond, then_block, else_branch, span, .. } => {
+            let then_body = lower_stmts_with_ctx(&then_block.stmts, ctx);
+            let else_body = else_branch.as_ref().map(|eb| match eb {
+                ElseBranch::ElseBlock(block) => lower_stmts_with_ctx(&block.stmts, ctx),
+                ElseBranch::ElseIf(if_stmt) => lower_stmt_with_ctx(if_stmt, ctx),
+            });
+            vec![CsStmt::If {
+                cond: lower_expr(cond),
+                then_body,
+                else_body,
+                source_span: Some(*span),
+            }]
+        }
+        Stmt::Unlisten { token, span } => {
+            // Resolve the token via ctx; if not found emit a diagnostic comment.
+            if let Some(rec) = ctx.records.iter().find(|r| {
+                match &r.cleanup {
+                    SubscriptionCleanup::Manual { bound_name } => bound_name == token,
+                    _ => false,
+                }
+            }) {
+                let event_expr = rec.event_expr.clone();
+                let field = rec.field_name.clone();
+                vec![CsStmt::Expr(
+                    format!("{}.RemoveListener({})", event_expr, field),
+                    Some(*span),
+                )]
+            } else {
+                vec![CsStmt::Raw(
+                    format!("/* error: unlisten '{}' — no matching manual listen found */", token),
+                    Some(*span),
+                )]
+            }
+        }
+        // All other statements: lower normally.
+        other => vec![lower_stmt(other)],
+    }
+}
+
+/// Lower a `listen` statement into C# IR.
+///
+/// * `handler_field`: when `Some(name)`, emit the named-field assignment form
+///   (`name = lambda; event.AddListener(name);`).  When `None`, emit inline form.
+fn lower_listen_stmt(
+    event: &Expr,
+    params: &[String],
+    body: &Block,
+    _lifetime: &ListenLifetime,
+    _bound_name: Option<&str>,
+    source_span: Option<Span>,
+    handler_field: Option<&str>,
+) -> CsStmt {
+    let event_str = lower_expr(event);
+    let params_str = if params.is_empty() {
+        "()".to_string()
+    } else {
+        format!("({})", params.join(", "))
+    };
+    let body_lines: Vec<String> = body
+        .stmts
+        .iter()
+        .map(|s| format!("    {};", stmt_to_inline(&lower_stmt(s))))
+        .collect();
+    let lambda_body = body_lines.join("\n");
+    let lambda = format!(
+        "{} => {{\n{}\n}}",
+        params_str, lambda_body,
+    );
+
+    if let Some(field) = handler_field {
+        // Named-field form: two statements bundled as a Raw block.
+        CsStmt::Raw(
+            format!(
+                "{field} = {lambda};\n{event_str}.AddListener({field});",
+                field = field,
+                lambda = lambda,
+                event_str = event_str,
+            ),
+            source_span,
+        )
+    } else {
+        // Inline form (v1 / Register lifetime).
+        CsStmt::Expr(
+            format!("{}.AddListener({})", event_str, lambda),
+            source_span,
+        )
+    }
+}
+
+/// Generate the private System.Action field members for all subscriptions.
+fn subscription_fields(records: &[SubscriptionRecord]) -> Vec<CsMember> {
+    records.iter().map(|r| CsMember::Field {
+        attributes: vec![],
+        modifiers: "private".into(),
+        ty: "System.Action".into(),
+        name: r.field_name.clone(),
+        init: None,
+    }).collect()
+}
+
+/// Generate an optional `__prsm_cleanup_disable()` and/or `__prsm_cleanup_destroy()` method.
+fn cleanup_methods(records: &[SubscriptionRecord]) -> Vec<CsMember> {
+    let disable_records: Vec<_> = records.iter()
+        .filter(|r| matches!(r.cleanup, SubscriptionCleanup::OnDisable))
+        .collect();
+    let destroy_records: Vec<_> = records.iter()
+        .filter(|r| matches!(r.cleanup, SubscriptionCleanup::OnDestroy))
+        .collect();
+
+    let mut methods = Vec::new();
+
+    if !disable_records.is_empty() {
+        let body = disable_records.iter().map(|r| {
+            CsStmt::Expr(format!("{}.RemoveListener({})", r.event_expr, r.field_name), None)
+        }).collect();
+        methods.push(CsMember::Method {
+            attributes: vec![],
+            modifiers: "private".into(),
+            return_ty: "void".into(),
+            name: "__prsm_cleanup_disable".into(),
+            params: vec![],
+            body,
+            source_span: None,
+        });
+    }
+
+    if !destroy_records.is_empty() {
+        let body = destroy_records.iter().map(|r| {
+            CsStmt::Expr(format!("{}.RemoveListener({})", r.event_expr, r.field_name), None)
+        }).collect();
+        methods.push(CsMember::Method {
+            attributes: vec![],
+            modifiers: "private".into(),
+            return_ty: "void".into(),
+            name: "__prsm_cleanup_destroy".into(),
+            params: vec![],
+            body,
+            source_span: None,
+        });
+    }
+
+    methods
+}
+
+/// Whether any subscriptions need OnDisable / OnDestroy cleanup.
+fn needs_cleanup_disable(records: &[SubscriptionRecord]) -> bool {
+    records.iter().any(|r| matches!(r.cleanup, SubscriptionCleanup::OnDisable))
+}
+fn needs_cleanup_destroy(records: &[SubscriptionRecord]) -> bool {
+    records.iter().any(|r| matches!(r.cleanup, SubscriptionCleanup::OnDestroy))
+}
+
+/// Inject `__prsm_cleanup_X()` calls into the OnDisable / OnDestroy lifecycle methods.
+/// If no such lifecycle exists, synthesize one.
+fn inject_cleanup_calls(cs_members: &mut Vec<CsMember>, records: &[SubscriptionRecord]) {
+    if needs_cleanup_disable(records) {
+        inject_or_synthesize(cs_members, "OnDisable", "__prsm_cleanup_disable()");
+    }
+    if needs_cleanup_destroy(records) {
+        inject_or_synthesize(cs_members, "OnDestroy", "__prsm_cleanup_destroy()");
+    }
+}
+
+fn inject_or_synthesize(cs_members: &mut Vec<CsMember>, method_name: &str, call: &str) {
+    // Try to find an existing method with this name.
+    for m in cs_members.iter_mut() {
+        if let CsMember::Method { name, body, .. } = m {
+            if name == method_name {
+                // Prepend the cleanup call.
+                body.insert(0, CsStmt::Expr(call.into(), None));
+                return;
+            }
+        }
+    }
+    // Not found — synthesize it.
+    cs_members.push(CsMember::Method {
+        attributes: vec![],
+        modifiers: "protected virtual".into(),
+        return_ty: "void".into(),
+        name: method_name.into(),
+        params: vec![],
+        body: vec![CsStmt::Expr(call.into(), None)],
+        source_span: None,
+    });
+}
+

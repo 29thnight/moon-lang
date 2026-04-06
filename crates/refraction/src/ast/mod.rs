@@ -251,7 +251,14 @@ pub enum Stmt {
     Listen {
         event: Expr,
         params: Vec<String>,
+        lifetime: ListenLifetime,
+        /// For `val name = listen event manual { }` — the bound variable name.
+        bound_name: Option<String>,
         body: Block,
+        span: Span,
+    },
+    Unlisten {
+        token: String,
         span: Span,
     },
     IntrinsicBlock {
@@ -290,6 +297,19 @@ pub enum WhenPattern {
 pub enum WhenBody {
     Block(Block),
     Expr(Expr),
+}
+
+/// How long a `listen` subscription lives.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ListenLifetime {
+    /// v1: register only, never deregister (default when no modifier)
+    Register,
+    /// Auto-remove in OnDisable: `listen event until disable { … }`
+    UntilDisable,
+    /// Auto-remove in OnDestroy: `listen event until destroy { … }`
+    UntilDestroy,
+    /// Return subscription token; user calls `unlisten token`: `val t = listen event manual { … }`
+    Manual,
 }
 
 #[derive(Debug, Clone)]

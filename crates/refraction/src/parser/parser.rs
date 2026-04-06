@@ -881,6 +881,7 @@ impl Parser {
                 Ok(Stmt::StopAll { span: Span { start: start.start, end: self.peek_span().end } })
             }
             TokenKind::Listen => self.parse_listen_stmt(),
+            TokenKind::Unlisten => self.parse_unlisten_stmt(),
             TokenKind::Intrinsic => {
                 self.advance();
                 let code = self.parse_raw_brace_block()?;
@@ -910,6 +911,23 @@ impl Parser {
             None
         };
         self.expect(&TokenKind::Eq)?;
+        // Special case: `val token = listen event manual { … }`
+        // `listen` is not a general expression, so we handle it here.
+        if self.check(&TokenKind::Listen) {
+            let mut listen = self.parse_listen_stmt()?;
+            if let Stmt::Listen { ref mut lifetime, ref mut bound_name, .. } = listen {
+                if *lifetime != ListenLifetime::Manual {
+                    return Err(ParseError {
+                        message: "val binding for listen requires the 'manual' lifetime modifier".into(),
+                        span: start,
+                    });
+                }
+                *bound_name = Some(name);
+                // type annotation (if any) is discarded for manual listen
+                let _ = ty;
+            }
+            return Ok(listen);
+        }
         let init = self.parse_expr()?;
         self.expect_newline_or_eof();
         Ok(Stmt::ValDecl { name, name_span, ty, init, span: Span { start: start.start, end: self.peek_span().end } })
@@ -1104,28 +1122,56 @@ impl Parser {
     fn parse_listen_stmt(&mut self) -> Result<Stmt, ParseError> {
         let start = self.peek_span();
         self.advance(); // consume 'listen'
-        let event = self.parse_expr()?;
+        // Use parse_additive (not parse_expr) to avoid consuming `until` as a range operator.
+        // listen events are always simple member-access expressions like `button.onClick`.
+        let event = self.parse_additive()?;
+
+        // Parse optional lifetime modifier before the body block:
+        //   listen event until disable { … }   → UntilDisable
+        //   listen event until destroy { … }   → UntilDestroy
+        //   listen event manual { … }           → Manual
+        //   listen event { … }                  → Register (v1 default)
+        self.skip_newlines();
+        let lifetime = match self.peek().clone() {
+            TokenKind::Until => {
+                self.advance(); // consume 'until'
+                self.skip_newlines();
+                match self.peek().clone() {
+                    TokenKind::Identifier(ref w) if w == "disable" => {
+                        self.advance(); // consume 'disable'
+                        ListenLifetime::UntilDisable
+                    }
+                    TokenKind::Identifier(ref w) if w == "destroy" => {
+                        self.advance(); // consume 'destroy'
+                        ListenLifetime::UntilDestroy
+                    }
+                    other => {
+                        let span = self.peek_span();
+                        return Err(ParseError {
+                            message: format!("expected 'disable' or 'destroy' after 'until' in listen, got {:?}", other),
+                            span,
+                        });
+                    }
+                }
+            }
+            TokenKind::Manual => {
+                self.advance(); // consume 'manual'
+                ListenLifetime::Manual
+            }
+            _ => ListenLifetime::Register,
+        };
 
         self.skip_newlines();
         self.expect(&TokenKind::LBrace)?;
         self.skip_newlines();
 
-        // Check for lambda params: { param -> body }
+        // Check for lambda params: { param => body }
         let mut params = Vec::new();
         if let TokenKind::Identifier(name) = self.peek().clone() {
-            // Look ahead for ->
             let mut ahead = self.pos + 1;
             while ahead < self.tokens.len() && self.tokens[ahead].kind == TokenKind::Newline {
                 ahead += 1;
             }
-            // Check for "ident ->" pattern (using FatArrow which is =>)
-            // Actually listen uses { param -> ... } where -> is not a token yet.
-            // Let's use => for consistency with when, or add a -> token.
-            // For v1, let's use the pattern: { ident => body }
-            // Actually the spec says { value -> body }. Let me check...
-            // The spec example: listen slider.onValueChanged { value -> setVolume(value) }
-            // We don't have a -> token. Let me use a different approach:
-            // Look for "ident =>" pattern
             if ahead < self.tokens.len() && self.tokens[ahead].kind == TokenKind::FatArrow {
                 params.push(name);
                 self.advance(); // consume ident
@@ -1152,7 +1198,32 @@ impl Parser {
         Ok(Stmt::Listen {
             event,
             params,
+            lifetime,
+            bound_name: None,
             body,
+            span: Span { start: start.start, end: self.peek_span().end },
+        })
+    }
+
+    fn parse_unlisten_stmt(&mut self) -> Result<Stmt, ParseError> {
+        let start = self.peek_span();
+        self.advance(); // consume 'unlisten'
+        self.skip_newlines();
+        let name = match self.peek().clone() {
+            TokenKind::Identifier(n) => {
+                self.advance();
+                n
+            }
+            other => {
+                return Err(ParseError {
+                    message: format!("expected identifier after 'unlisten', got {:?}", other),
+                    span: self.peek_span(),
+                });
+            }
+        };
+        self.expect_newline_or_eof();
+        Ok(Stmt::Unlisten {
+            token: name,
             span: Span { start: start.start, end: self.peek_span().end },
         })
     }

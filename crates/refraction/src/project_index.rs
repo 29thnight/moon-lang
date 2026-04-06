@@ -740,7 +740,7 @@ fn collect_stmt_type_references(
             collect_expr_type_references(path, container_name, event, references);
             collect_block_type_references(path, container_name, body, references);
         }
-        Stmt::StopAll { .. } | Stmt::IntrinsicBlock { .. } | Stmt::Break { .. } | Stmt::Continue { .. } => {}
+        Stmt::StopAll { .. } | Stmt::IntrinsicBlock { .. } | Stmt::Break { .. } | Stmt::Continue { .. } | Stmt::Unlisten { .. } => {}
     }
 }
 

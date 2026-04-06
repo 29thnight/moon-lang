@@ -2484,3 +2484,236 @@ fn invalid_files_all_produce_errors() {
     }
 }
 
+// ── v2 listen lifetime tests ──────────────────────────────────────────────────
+
+#[test]
+fn v2_listen_until_disable_emits_cleanup_in_on_disable() {
+    let root = unique_temp_dir("prism_v2_listen_until_disable");
+    write_file(
+        &root.join(".prsmproject"),
+        r#"[project]
+name = "V2ListenProject"
+
+[compiler]
+output_dir = "Generated/PrSM"
+
+[source]
+include = ["Assets/**/*.prsm"]
+exclude = []
+"#,
+    );
+    write_file(
+        &root.join("Assets").join("UiController.prsm"),
+        r#"using UnityEngine.UI
+
+component UiController : MonoBehaviour {
+    serialize button: Button
+
+    onEnable {
+        listen button.onClick until disable {
+            nativeLog("clicked")
+        }
+    }
+
+    intrinsic func nativeLog(message: String) {
+        Debug.Log(message);
+    }
+}
+"#,
+    );
+
+    let output = Command::new(prism())
+        .args(["build", "--json"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "build failed:\n{}", String::from_utf8_lossy(&output.stderr));
+
+    let generated_path = root.join("Generated").join("PrSM").join("UiController.cs");
+    let src = fs::read_to_string(&generated_path).unwrap();
+
+    // Handler field declared
+    assert!(src.contains("private System.Action _prsm_h0"), "missing handler field:\n{src}");
+    // AddListener uses named handler
+    assert!(src.contains("button.onClick.AddListener(_prsm_h0)"), "missing AddListener:\n{src}");
+    // Cleanup method synthesised
+    assert!(src.contains("__prsm_cleanup_disable"), "missing cleanup method:\n{src}");
+    // RemoveListener called in cleanup
+    assert!(src.contains("button.onClick.RemoveListener(_prsm_h0)"), "missing RemoveListener:\n{src}");
+    // OnDisable calls cleanup
+    assert!(src.contains("OnDisable"), "missing OnDisable:\n{src}");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn v2_listen_until_destroy_emits_cleanup_in_on_destroy() {
+    let root = unique_temp_dir("prism_v2_listen_until_destroy");
+    write_file(
+        &root.join(".prsmproject"),
+        r#"[project]
+name = "V2ListenDestroyProject"
+
+[compiler]
+output_dir = "Generated/PrSM"
+
+[source]
+include = ["Assets/**/*.prsm"]
+exclude = []
+"#,
+    );
+    write_file(
+        &root.join("Assets").join("Spawner.prsm"),
+        r#"component Spawner : MonoBehaviour {
+    serialize source: GameObject
+
+    start {
+        listen source.GetComponent_EventEmitter().onSpawn until destroy {
+            debug("spawned")
+        }
+    }
+
+    intrinsic func debug(msg: String) {
+        Debug.Log(msg);
+    }
+}
+"#,
+    );
+
+    let output = Command::new(prism())
+        .args(["build", "--json"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "build failed:\n{}", String::from_utf8_lossy(&output.stderr));
+
+    let generated_path = root.join("Generated").join("PrSM").join("Spawner.cs");
+    let src = fs::read_to_string(&generated_path).unwrap();
+
+    assert!(src.contains("private System.Action _prsm_h0"), "missing handler field:\n{src}");
+    assert!(src.contains("__prsm_cleanup_destroy"), "missing cleanup_destroy method:\n{src}");
+    assert!(src.contains("RemoveListener(_prsm_h0)"), "missing RemoveListener:\n{src}");
+    assert!(src.contains("OnDestroy"), "missing OnDestroy:\n{src}");
+    // v1 cleanup_disable should NOT be present
+    assert!(!src.contains("__prsm_cleanup_disable"), "unexpected cleanup_disable:\n{src}");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn v1_listen_register_unchanged() {
+    let root = unique_temp_dir("prism_v1_listen_register");
+    write_file(
+        &root.join(".prsmproject"),
+        r#"[project]
+name = "V1ListenProject"
+
+[compiler]
+output_dir = "Generated/PrSM"
+
+[source]
+include = ["Assets/**/*.prsm"]
+exclude = []
+"#,
+    );
+    write_file(
+        &root.join("Assets").join("Button.prsm"),
+        r#"using UnityEngine.UI
+
+component ButtonHandler : MonoBehaviour {
+    serialize button: Button
+
+    start {
+        listen button.onClick {
+            fire()
+        }
+    }
+
+    func fire(): Unit {
+        intrinsic { Debug.Log("fire"); }
+    }
+}
+"#,
+    );
+
+    let output = Command::new(prism())
+        .args(["build", "--json"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "build failed:\n{}", String::from_utf8_lossy(&output.stderr));
+
+    let generated_path = root.join("Generated").join("PrSM").join("Button.cs");
+    let src = fs::read_to_string(&generated_path).unwrap();
+
+    // v1: inline AddListener, no handler fields, no cleanup
+    assert!(src.contains("button.onClick.AddListener(()"), "missing inline AddListener:\n{src}");
+    assert!(!src.contains("_prsm_h"), "unexpected handler field for v1 listen:\n{src}");
+    assert!(!src.contains("__prsm_cleanup"), "unexpected cleanup for v1 listen:\n{src}");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn v2_listen_manual_with_unlisten() {
+    let root = unique_temp_dir("prism_v2_listen_manual");
+    write_file(
+        &root.join(".prsmproject"),
+        r#"[project]
+name = "V2ManualListenProject"
+
+[compiler]
+output_dir = "Generated/PrSM"
+
+[source]
+include = ["Assets/**/*.prsm"]
+exclude = []
+"#,
+    );
+    write_file(
+        &root.join("Assets").join("Timer.prsm"),
+        r#"component TimerHandler : MonoBehaviour {
+    serialize timer: UnityEvent
+
+    onEnable {
+        val sub = listen timer manual {
+            tick()
+        }
+    }
+
+    onDisable {
+        unlisten sub
+    }
+
+    intrinsic func tick() {
+        Debug.Log("tick");
+    }
+}
+"#,
+    );
+
+    let output = Command::new(prism())
+        .args(["build", "--json"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "build failed:\n{}", String::from_utf8_lossy(&output.stderr));
+
+    let generated_path = root.join("Generated").join("PrSM").join("Timer.cs");
+    let src = fs::read_to_string(&generated_path).unwrap();
+
+    // Handler field declared
+    assert!(src.contains("private System.Action _prsm_h0"), "missing handler field:\n{src}");
+    // AddListener called
+    assert!(src.contains("timer.AddListener(_prsm_h0)"), "missing AddListener:\n{src}");
+    // unlisten resolved to RemoveListener
+    assert!(src.contains("timer.RemoveListener(_prsm_h0)"), "missing RemoveListener:\n{src}");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+
