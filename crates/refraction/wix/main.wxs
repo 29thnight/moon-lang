@@ -54,7 +54,7 @@
                     </Component>
                     <Component Id='vsix_bundle' Guid='D4E5F6A7-B8C9-0123-DEFA-234567890123'>
                         <File Id='prsm_vsix' Name='prsm-lang.prsm-lang.vsix'
-                            Source='$(var.ProjectDir)\..\..\vscode-prsm\artifacts\prsm-lang.prsm-lang-0.1.0.vsix'
+                            Source='$(var.CargoTargetBinDir)\..\prsm-lang.prsm-lang-0.1.0.vsix'
                             KeyPath='yes' />
                     </Component>
                 </Directory>

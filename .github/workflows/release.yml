@@ -122,6 +122,9 @@ jobs:
           name: vsix
           path: vscode-prsm/artifacts
 
+      - name: Stage VSIX next to binary for WiX
+        run: cp vscode-prsm/artifacts/*.vsix target/
+
       - name: Build MSI
         run: cargo wix -p refraction --no-build --nocapture
 
