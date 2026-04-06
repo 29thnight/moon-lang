@@ -216,6 +216,14 @@ pub enum Member {
         code: String,
         span: Span,
     },
+    Pool {
+        name: String,
+        name_span: Span,
+        item_type: TypeRef,
+        capacity: u32,
+        max_size: u32,
+        span: Span,
+    },
 }
 
 // ── Statements ───────────────────────────────────────────────────

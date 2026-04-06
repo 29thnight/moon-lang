@@ -670,6 +670,9 @@ fn summarize_member_type_references(path: &Path, decl_name: &str, members: &[Mem
                 let container_name = format!("{}.{}", decl_name, name);
                 references.extend(summarize_param_type_references(path, &container_name, params));
             }
+            Member::Pool { name, item_type, .. } => {
+                collect_type_references(path, &format!("{}.{}", decl_name, name), item_type, &mut references);
+            }
         }
     }
 
@@ -1142,6 +1145,25 @@ fn summarize_members(path: &Path, container_name: &str, members: &[Member]) -> V
                 name: name.clone(),
                 kind: MemberKind::Coroutine,
                 signature: format!("intrinsic coroutine {}({})", name, format_params(params)),
+                span: *name_span,
+            },
+            Member::Pool {
+                name,
+                name_span,
+                item_type,
+                capacity,
+                max_size,
+                ..
+            } => MemberSummary {
+                name: name.clone(),
+                kind: MemberKind::Field,
+                signature: format!(
+                    "pool {}: {}(capacity = {}, max = {})",
+                    name,
+                    format_type_ref(item_type),
+                    capacity,
+                    max_size
+                ),
                 span: *name_span,
             },
         })

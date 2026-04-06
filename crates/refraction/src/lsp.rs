@@ -1736,6 +1736,9 @@ fn collect_used_namespaces_for_member(member: &Member, used_namespaces: &mut Has
         Member::IntrinsicCoroutine { params, .. } => {
             collect_used_namespaces_for_params(params, used_namespaces);
         }
+        Member::Pool { item_type, .. } => {
+            collect_used_namespaces_for_type_ref(item_type, used_namespaces);
+        }
     }
 }
 
@@ -2100,7 +2103,8 @@ fn member_contains_intrinsic_code(member: &Member) -> bool {
         Member::Require { .. }
         | Member::Optional { .. }
         | Member::Child { .. }
-        | Member::Parent { .. } => false,
+        | Member::Parent { .. }
+        | Member::Pool { .. } => false,
     }
 }
 

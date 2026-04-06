@@ -584,6 +584,24 @@ component PlayerHealth : MonoBehaviour {
     }
 
     #[test]
+    fn test_pool_member() {
+        let src = r#"component Spawner : MonoBehaviour {
+    serialize prefab: Bullet
+    pool bullets: Bullet(capacity = 20, max = 100)
+}"#;
+        let output = compile(src);
+        assert!(output.contains("ObjectPool<Bullet>"), "should generate ObjectPool<Bullet> field type");
+        assert!(output.contains("_bullets"), "should generate _bullets backing field");
+        assert!(output.contains("defaultCapacity: 20"), "should set defaultCapacity to 20");
+        assert!(output.contains("maxSize: 100"), "should set maxSize to 100");
+        assert!(output.contains("Instantiate(_prefab)"), "should use Instantiate with matching serialize prefab");
+        assert!(output.contains("actionOnGet:"), "should have actionOnGet callback");
+        assert!(output.contains("actionOnRelease:"), "should have actionOnRelease callback");
+        assert!(output.contains("actionOnDestroy:"), "should have actionOnDestroy callback");
+        assert!(output.contains("private void Awake()"), "should generate Awake for pool init");
+    }
+
+    #[test]
     fn test_singleton_component() {
         let src = r#"singleton component AudioManager : MonoBehaviour {
   serialize volume: Float = 1.0

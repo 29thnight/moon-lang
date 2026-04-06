@@ -32,7 +32,7 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
         Decl::Component { name, is_singleton, base_class, interfaces, members, .. } => {
             let mut cs_members = Vec::new();
             let callable_signatures = collect_callable_signatures(members);
-            let (require_fields, optional_fields, child_fields, parent_fields, user_awake) =
+            let (require_fields, optional_fields, child_fields, parent_fields, pool_fields, user_awake) =
                 collect_component_init(members);
 
             // Lower fields first
@@ -63,18 +63,39 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                             setter_expr: None,
                         });
                     }
+                    Member::Pool { name, item_type, .. } => {
+                        let item_ty = lower_type(item_type);
+                        let pool_ty = format!("ObjectPool<{}>", item_ty);
+                        let backing = format!("_{}", name);
+                        cs_members.push(CsMember::Field {
+                            attributes: vec![],
+                            modifiers: "private".into(),
+                            ty: pool_ty.clone(),
+                            name: backing.clone(),
+                            init: None,
+                        });
+                        cs_members.push(CsMember::Property {
+                            modifiers: "public".into(),
+                            ty: pool_ty,
+                            name: name.clone(),
+                            getter_expr: backing,
+                            setter: None,
+                            setter_expr: None,
+                        });
+                    }
                     _ => {}
                 }
             }
 
-            // Generate Awake method (require/optional resolution + user awake)
+            // Generate Awake method (require/optional resolution + pool init + user awake)
             if !require_fields.is_empty() || !optional_fields.is_empty()
                 || !child_fields.is_empty() || !parent_fields.is_empty()
+                || !pool_fields.is_empty()
                 || user_awake.is_some()
             {
                 cs_members.push(lower_awake(
                     name, &require_fields, &optional_fields,
-                    &child_fields, &parent_fields, user_awake, &callable_signatures,
+                    &child_fields, &parent_fields, &pool_fields, user_awake, &callable_signatures,
                 ));
             }
 
@@ -835,12 +856,30 @@ struct FieldInfo {
     ty_str: String,
 }
 
-fn collect_component_init(members: &[Member]) -> (Vec<FieldInfo>, Vec<FieldInfo>, Vec<FieldInfo>, Vec<FieldInfo>, Option<&Block>) {
+struct PoolInfo {
+    name: String,
+    item_type: String,
+    capacity: u32,
+    max_size: u32,
+    prefab_field: Option<String>,
+}
+
+fn collect_component_init(members: &[Member]) -> (Vec<FieldInfo>, Vec<FieldInfo>, Vec<FieldInfo>, Vec<FieldInfo>, Vec<PoolInfo>, Option<&Block>) {
     let mut require = Vec::new();
     let mut optional = Vec::new();
     let mut child = Vec::new();
     let mut parent = Vec::new();
+    let mut pools = Vec::new();
     let mut user_awake = None;
+
+    // First pass: collect serialize field names by type for prefab matching
+    let mut serialize_by_type: HashMap<String, String> = HashMap::new();
+    for m in members {
+        if let Member::SerializeField { name, ty, .. } = m {
+            let ty_str = lower_type(ty);
+            serialize_by_type.insert(ty_str, name.clone());
+        }
+    }
 
     for m in members {
         match m {
@@ -856,13 +895,24 @@ fn collect_component_init(members: &[Member]) -> (Vec<FieldInfo>, Vec<FieldInfo>
             Member::Parent { name, ty, .. } => {
                 parent.push(FieldInfo { name: name.clone(), ty_str: lower_type(ty) });
             }
+            Member::Pool { name, item_type, capacity, max_size, .. } => {
+                let item_ty_str = lower_type(item_type);
+                let prefab_field = serialize_by_type.get(&item_ty_str).cloned();
+                pools.push(PoolInfo {
+                    name: name.clone(),
+                    item_type: item_ty_str,
+                    capacity: *capacity,
+                    max_size: *max_size,
+                    prefab_field,
+                });
+            }
             Member::Lifecycle { kind: LifecycleKind::Awake, body, .. } => {
                 user_awake = Some(body);
             }
             _ => {}
         }
     }
-    (require, optional, child, parent, user_awake)
+    (require, optional, child, parent, pools, user_awake)
 }
 
 #[derive(Debug, Clone)]
@@ -920,6 +970,7 @@ fn lower_awake(
     optional: &[FieldInfo],
     child: &[FieldInfo],
     parent: &[FieldInfo],
+    pools: &[PoolInfo],
     user_awake: Option<&Block>,
     callable_signatures: &HashMap<String, CallableSignature>,
 ) -> CsMember {
@@ -1003,6 +1054,39 @@ fn lower_awake(
                 CsStmt::Return(None, None),
             ],
             else_body: None,
+            source_span: None,
+        });
+    }
+
+    // Pool initialization
+    for p in pools {
+        let backing = format!("_{}", p.name);
+        let create_func = if let Some(ref prefab) = p.prefab_field {
+            format!("() => Instantiate(_{prefab})")
+        } else {
+            format!("() => new {}()", p.item_type)
+        };
+        let init_expr = format!(
+            "new ObjectPool<{ty}>(\n\
+             {indent}createFunc: {create},\n\
+             {indent}actionOnGet: obj => obj.gameObject.SetActive(true),\n\
+             {indent}actionOnRelease: obj => obj.gameObject.SetActive(false),\n\
+             {indent}actionOnDestroy: obj => Destroy(obj.gameObject),\n\
+             {indent}collectionCheck: true,\n\
+             {indent}defaultCapacity: {cap},\n\
+             {indent}maxSize: {max}\n\
+             {indent2})",
+            ty = p.item_type,
+            create = create_func,
+            cap = p.capacity,
+            max = p.max_size,
+            indent = "                ",
+            indent2 = "            ",
+        );
+        body.push(CsStmt::Assignment {
+            target: backing,
+            op: "=".into(),
+            value: init_expr,
             source_span: None,
         });
     }
@@ -1367,7 +1451,8 @@ fn member_span(member: &Member) -> Span {
         | Member::Coroutine { span, .. }
         | Member::Lifecycle { span, .. }
         | Member::IntrinsicFunc { span, .. }
-        | Member::IntrinsicCoroutine { span, .. } => *span,
+        | Member::IntrinsicCoroutine { span, .. }
+        | Member::Pool { span, .. } => *span,
     }
 }
 

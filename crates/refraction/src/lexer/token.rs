@@ -84,6 +84,7 @@ pub enum TokenKind {
     Optional,
     Child,
     Parent,
+    Pool,
 
     // === Keywords: mutability ===
     Val,
@@ -221,6 +222,7 @@ impl TokenKind {
                 | TokenKind::Optional
                 | TokenKind::Child
                 | TokenKind::Parent
+                | TokenKind::Pool
                 | TokenKind::Val
                 | TokenKind::Var
                 | TokenKind::Public
@@ -290,6 +292,7 @@ pub fn lookup_keyword(ident: &str) -> Option<TokenKind> {
         "optional" => Some(TokenKind::Optional),
         "child" => Some(TokenKind::Child),
         "parent" => Some(TokenKind::Parent),
+        "pool" => Some(TokenKind::Pool),
         "val" => Some(TokenKind::Val),
         "var" => Some(TokenKind::Var),
         "const" => Some(TokenKind::Const),

@@ -654,6 +654,25 @@ impl Analyzer {
                     definition_id,
                 });
             }
+            Member::Pool {
+                name,
+                name_span,
+                item_type,
+                ..
+            } => {
+                let btype = self.resolve_typeref(item_type);
+                let definition_id = self.record_member_definition(
+                    name,
+                    HirDefinitionKind::Field,
+                    btype.clone(),
+                    false,
+                    *name_span,
+                );
+                self.scopes.define(Symbol {
+                    name: name.clone(), ty: btype, kind: SymbolKind::Field, mutable: false,
+                    definition_id,
+                });
+            }
         }
     }
 

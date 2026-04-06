@@ -656,6 +656,7 @@ impl Parser {
             TokenKind::Optional => self.parse_optional(),
             TokenKind::Child => self.parse_child(),
             TokenKind::Parent => self.parse_parent(),
+            TokenKind::Pool => self.parse_pool(),
             TokenKind::Func => self.parse_func(Visibility::Public, false),
             TokenKind::Coroutine => self.parse_coroutine(),
             TokenKind::Intrinsic => self.parse_intrinsic_member(),
@@ -809,6 +810,55 @@ impl Parser {
         let ty = self.parse_type()?;
         self.expect_newline_or_eof();
         Ok(Member::Parent { name, name_span, ty, span: Span { start: start.start, end: self.peek_span().end } })
+    }
+
+    fn parse_pool(&mut self) -> Result<Member, ParseError> {
+        let start = self.peek_span();
+        self.advance(); // consume 'pool'
+        let (name, name_span) = self.expect_ident()?;
+        self.expect(&TokenKind::Colon)?;
+        let item_type = self.parse_type()?;
+        self.expect(&TokenKind::LParen)?;
+
+        // Parse named arguments: capacity = N, max = M
+        let mut capacity: Option<u32> = None;
+        let mut max_size: Option<u32> = None;
+
+        loop {
+            if self.peek() == &TokenKind::RParen {
+                break;
+            }
+            let (arg_name, _) = self.expect_ident()?;
+            self.expect(&TokenKind::Eq)?;
+            if let TokenKind::IntLiteral(n) = self.peek().clone() {
+                self.advance();
+                match arg_name.as_str() {
+                    "capacity" => capacity = Some(n as u32),
+                    "max" => max_size = Some(n as u32),
+                    _ => return Err(self.error(format!("Unknown pool argument '{}', expected 'capacity' or 'max'", arg_name))),
+                }
+            } else {
+                return Err(self.error(format!("Expected integer literal for pool argument '{}', found {:?}", arg_name, self.peek())));
+            }
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+        }
+
+        self.expect(&TokenKind::RParen)?;
+        self.expect_newline_or_eof();
+
+        let capacity = capacity.ok_or_else(|| self.error("Pool declaration missing 'capacity' argument".into()))?;
+        let max_size = max_size.ok_or_else(|| self.error("Pool declaration missing 'max' argument".into()))?;
+
+        Ok(Member::Pool {
+            name,
+            name_span,
+            item_type,
+            capacity,
+            max_size,
+            span: Span { start: start.start, end: self.peek_span().end },
+        })
     }
 
     fn parse_func(&mut self, vis: Visibility, is_override: bool) -> Result<Member, ParseError> {
