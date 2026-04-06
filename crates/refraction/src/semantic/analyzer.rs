@@ -582,6 +582,15 @@ impl Analyzer {
                 return_ty,
                 ..
             } => {
+                // Reserved built-in sugar names cannot be used as user function names.
+                const RESERVED_SUGAR_NAMES: &[&str] = &["get", "find"];
+                if RESERVED_SUGAR_NAMES.contains(&name.as_str()) {
+                    self.diag.error(
+                        "E101",
+                        format!("'{}' is a reserved built-in method name (maps to Unity API). Choose a different name.", name),
+                        *name_span,
+                    );
+                }
                 let ret = return_ty.as_ref().map(|t| self.resolve_typeref(t)).unwrap_or(PrismType::Unit);
                 let definition_id = self.record_member_definition(
                     name,
@@ -1956,6 +1965,26 @@ mod tests {
         let src = "component Small : MonoBehaviour {\n  func a() {}\n  func b() {}\n}";
         let diags = warnings(src);
         assert!(!diags.iter().any(|d| d.code == "W010"), "should NOT warn with only 2 methods");
+    }
+
+    // === E101: Reserved sugar method name ===
+
+    #[test]
+    fn test_reserved_sugar_name_get() {
+        let diags = errors("component Foo : MonoBehaviour {\n  func get() {}\n}");
+        assert!(diags.iter().any(|d| d.code == "E101"), "expected E101 for reserved name 'get', got: {:?}", diags);
+    }
+
+    #[test]
+    fn test_reserved_sugar_name_find() {
+        let diags = errors("component Foo : MonoBehaviour {\n  func find() {}\n}");
+        assert!(diags.iter().any(|d| d.code == "E101"), "expected E101 for reserved name 'find', got: {:?}", diags);
+    }
+
+    #[test]
+    fn test_non_reserved_name_ok() {
+        let diags = errors("component Foo : MonoBehaviour {\n  func getData() {}\n}");
+        assert!(!diags.iter().any(|d| d.code == "E101"), "should NOT error for non-reserved name");
     }
 
     // === Full sample analysis ===
