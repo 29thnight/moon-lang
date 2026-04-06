@@ -35,9 +35,7 @@ listen healthBar.onValueChanged { val newValue ->
 }
 ```
 
-### Listen lifetimes (v2)
-
-> (PrSM 2 부터)
+### Listen lifetimes (PrSM 2 부터)
 
 v2 introduces explicit lifetime policies that automatically manage listener cleanup. These are only valid inside `component` declarations (error E083 outside).
 

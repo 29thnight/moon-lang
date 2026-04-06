@@ -220,12 +220,17 @@ const CodeBlock = ({ children, className }: { children: string; className?: stri
 
 
 const renderInlineMarkdown = (text: string) => {
-  // Split on inline code, bold, and version markers like (PrSM 2 부터) or (Since PrSM 2)
-  return text.split(/(`[^`]+`|\*\*[^*]+\*\*|\(PrSM \d[\d.]* 부터\)|\(Since PrSM \d[\d.]*\))/).map((part, i) => {
+  // Split on: inline code, bold, links, and version markers
+  return text.split(/(`[^`]+`|\*\*[^*]+\*\*|\[([^\]]+)\]\(([^)]+)\)|\(PrSM \d[\d.]* 부터\)|\(Since PrSM \d[\d.]*\))/).filter(Boolean).map((part, i) => {
     if (part.startsWith('`')) return <code key={i}>{part.slice(1, -1)}</code>;
     if (part.startsWith('**')) return <strong key={i}>{part.slice(2, -2)}</strong>;
     if (/^\((?:PrSM \d|Since PrSM \d)/.test(part)) {
       return <span key={i} className="prsm-version-marker">{part}</span>;
+    }
+    // Links: [text](url) — captured groups become separate parts
+    const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (linkMatch) {
+      return <a key={i} href={linkMatch[2]}>{linkMatch[1]}</a>;
     }
     return part;
   });
@@ -331,11 +336,12 @@ function SimpleMarkdown({ content }: { content: string }) {
       flushTable(i);
     }
 
-    // 3. List handling
-    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+    // 3. List handling (unordered: - or *, numbered: 1. 2. etc.)
+    const numberedMatch = trimmed.match(/^(\d+)\.\s+(.+)/);
+    if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || numberedMatch) {
       flushTable(i);
       inList = true;
-      listItems.push(trimmed.slice(2));
+      listItems.push(numberedMatch ? numberedMatch[2] : trimmed.slice(2));
       return;
     } else if (inList) {
       flushList(i);
@@ -362,8 +368,18 @@ function SimpleMarkdown({ content }: { content: string }) {
       return;
     }
 
-    // 5. Headings & Paragraphs
-    if (line.startsWith('# ')) {
+    // 5. Horizontal rules
+    if (/^---+$/.test(trimmed) || /^\*\*\*+$/.test(trimmed)) {
+      flushList(i);
+      flushTable(i);
+      elements.push(<hr key={i} />);
+      return;
+    }
+
+    // 6. Headings & Paragraphs
+    if (line.startsWith('#### ')) {
+      elements.push(<h4 key={i}>{renderInlineMarkdown(line.slice(5))}</h4>);
+    } else if (line.startsWith('# ')) {
       const text = line.slice(2);
       const id = text.toLowerCase().replace(/[^\w]+/g, '-');
       elements.push(<h1 key={i} id={id}>{text}</h1>);
@@ -372,7 +388,7 @@ function SimpleMarkdown({ content }: { content: string }) {
       const id = text.toLowerCase().replace(/[^\w]+/g, '-');
       elements.push(<h2 key={i} id={id}>{text}</h2>);
     } else if (line.startsWith('### ')) {
-      elements.push(<h3 key={i}>{line.slice(4)}</h3>);
+      elements.push(<h3 key={i}>{renderInlineMarkdown(line.slice(4))}</h3>);
     } else if (line.trim()) {
       elements.push(<p key={i}>{renderInlineMarkdown(line)}</p>);
     }

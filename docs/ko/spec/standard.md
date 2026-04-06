@@ -27,7 +27,7 @@ C# 출력을 생성해야 한다.
 이 문서는 **Language 2**(현재)를 정의한다. Language 1에 존재하지 않았던
 기능은 도입 시점에 다음과 같이 표시된다:
 
-> [Since language 2]
+(PrSM 2 부터)
 
 ### 1.3 대상 플랫폼
 
@@ -349,7 +349,7 @@ var alive = true          // Bool로 추론
 
 ### 4.6 제네릭 타입 추론 [type.infer.generic]
 
-> [Since language 2]
+(PrSM 2 부터)
 
 변수 선언에 명시적 타입 주석이 있는 경우, 제네릭 편의 메서드(`get`,
 `find`, `child`, `parent`, `require`)는 타입 인자를 생략할 수 있다.
@@ -640,7 +640,7 @@ public class CooldownAttribute : System.Attribute {
 
 ### 5.9 기능 게이트 [decl.feature]
 
-> [Since language 2]
+(PrSM 2 부터)
 
 `.prsmproject` 파일은 언어 버전과 활성화된 기능 세트를 제어한다.
 적합한 구현은 `language.version` 필드를 읽어 언어 수준을 결정하고
@@ -1422,7 +1422,7 @@ for (int i = 0; i < 10; i += 2) {
 
 ### 9.10 제네릭 타입 추론
 
-> [Since language 2]
+(PrSM 2 부터)
 
 제네릭 편의 호출이 모호하지 않은 대상 타입이 있는 컨텍스트에 나타나면, 컴파일러는 타입 인자를 추론해야 한다.
 
@@ -1440,7 +1440,7 @@ val rb: Rigidbody = get()   // get<Rigidbody>()로 추론
 
 ### 9.11 `when`의 패턴 바인딩
 
-> [Since language 2]
+(PrSM 2 부터)
 
 `when` 분기가 페이로드 enum 변형과 일치할 때, 바인딩이 페이로드 값을 추출한다:
 
@@ -1550,7 +1550,7 @@ when {
 
 `when` 문이 enum 타입에 대해 매칭하고 모든 변형을 커버하지 않으며 `else` 분기가 없는 경우, 컴파일러는 경고 **W003**을 발행해야 한다.
 
-> [Since language 2]
+(PrSM 2 부터)
 
 #### 패턴 바인딩
 
@@ -1601,7 +1601,7 @@ for i in 0 until 10 { log("$i") }
 for i in 10 downTo 1 step 2 { log("$i") }
 ```
 
-> [Since language 2]
+(PrSM 2 부터)
 
 #### `for`에서의 구조 분해
 
@@ -1643,7 +1643,7 @@ continue
 
 ### 10.10 구조 분해 `val`
 
-> [Since language 2]
+(PrSM 2 부터)
 
 ```prsm
 val Result.Ok(value) = expr
@@ -1686,7 +1686,7 @@ listen slider.onValueChanged { val newValue ->
 slider.onValueChanged.AddListener((newValue) => { Debug.Log($"{newValue}"); });
 ```
 
-> [Since language 2]
+(PrSM 2 부터)
 
 #### 수명 수정자
 
@@ -1752,7 +1752,7 @@ unlisten token
 
 ### 10.12 Input System 편의 구문
 
-> [Since language 2]
+(PrSM 2 부터)
 
 Input System 편의 구문은 `.prsmproject`에서 `input-system` 기능 플래그를 필요로 한다. 플래그 없이 입력 편의 구문을 사용하면 **E070**이 생성된다.
 
@@ -2018,7 +2018,7 @@ var msg = $"Player {name} has {health} HP";
 
 ### 12.7 Listen 수명 로우어링
 
-> [Since language 2]
+(PrSM 2 부터)
 
 수명 수정자가 있는 각 `listen` 문에 대해 컴파일러는:
 
@@ -2033,7 +2033,7 @@ component가 이미 대상 생명주기 블록을 선언하고 있으면, 컴파
 
 ### 12.8 패턴 바인딩 로우어링
 
-> [Since language 2]
+(PrSM 2 부터)
 
 `when` 분기의 패턴 바인딩은 enum 태그에 대한 `switch`로 로우어링되고, 이어서 튜플 필드 추출이 수행되어야 한다:
 
@@ -2059,7 +2059,7 @@ switch (result.Tag) {
 
 ### 12.9 Input System 로우어링
 
-> [Since language 2]
+(PrSM 2 부터)
 
 component가 Input System 편의 구문을 사용하면, 컴파일러는:
 
@@ -2098,7 +2098,7 @@ component가 Input System 편의 구문을 사용하면, 컴파일러는:
 | E083 | `Listen lifetime modifier is only valid inside a component` | listen 수명 수정자(`until disable`, `until destroy`, `manual`)가 `component` 외부에 나타남. |
 | E100 | `Syntax error: {details}` | 파서 오류 총괄 -- 누락된 식별자, 짝이 맞지 않는 중괄호, 잘못된 위치의 키워드. |
 
-> [Since language 2]: E081, E082, E083
+(PrSM 2 부터): E081, E082, E083
 
 ### 13.2 경고
 

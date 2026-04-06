@@ -67,9 +67,7 @@ var alive = true          // inferred as Bool
 
 Explicit annotations are always valid and sometimes required (e.g., when the initializer is `null`).
 
-### Generic type inference (v2)
-
-> (PrSM 2 부터)
+### Generic type inference (PrSM 2 부터)
 
 v2 introduces limited context-based inference for generic method calls. See [Generic Inference](generic-inference.md) for details.
 
