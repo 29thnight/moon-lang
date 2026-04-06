@@ -1,184 +1,121 @@
 ---
-title: Migrating from v1 to v2
+title: Version Migration
 parent: Language Guide
 grand_parent: English Docs
 nav_order: 13
 ---
 
-# Migrating from v1 to v2
+# Version Migration
 
-## Overview
+This page covers migrating between PrSM language versions. Each version is fully backward-compatible — all programs from the previous version compile without changes.
 
-v2 is fully opt-in. Existing v1 projects continue to compile and run without any changes. You adopt v2 features at your own pace by updating your `.prsmproject` file.
+---
 
-v2 introduces listen lifetimes, pattern bindings in `when`, the new Input System sugar, and improved generic type inference. All of these are gated behind a version flag and optional feature flags, so nothing changes until you explicitly opt in.
+## PrSM 1 → PrSM 2
 
-## Step-by-step migration
-
-### Step 1 — Update `.prsmproject`
-
-Open your `.prsmproject` file and set the language version:
+### Activation
 
 ```toml
 [language]
-version = "2.0"
-```
-
-You can also enable specific feature flags at the same time (see the feature flag table below), but this is not required. Setting the version alone activates the core v2 semantics.
-
-### Step 2 — Review listen statements
-
-v2 introduces explicit lifetime modifiers for `listen`, but does **not** change the default behavior. `listen` without a modifier still registers only (no auto-cleanup), same as v1.
-
-**What's new in v2:**
-
-- `listen event until disable { }` — auto-cleanup in OnDisable
-- `listen event until destroy { }` — auto-cleanup in OnDestroy
-- `val token = listen event manual { }` + `unlisten token` — explicit control
-- These modifiers are only valid inside `component` declarations (E083 outside)
-
-**What to check:**
-
-- If your v1 code has manual `RemoveListener` in intrinsic blocks, consider replacing with `until disable` or `until destroy` for cleaner code.
-- `listen` without a modifier is unchanged in behavior — it registers once with no automatic cleanup.
-
-```prsm
-// v1 behavior — register once, never auto-cleanup
-listen button.onClick {
-    fire()
-}
-
-// v2 equivalent — explicit auto-cleanup in OnDisable
-listen button.onClick until disable {
-    fire()
-}
-
-// v2 — manual lifetime, you control removal
-val token = listen button.onClick manual {
-    fire()
-}
-unlisten token
-```
-
-### Step 3 — Enable feature flags
-
-Add the features you want to the `features` array in `.prsmproject`:
-
-```toml
-[language]
-version = "2.0"
+version = "2"
 features = ["pattern-bindings", "input-system", "auto-unlisten"]
 ```
 
-Each feature is independent — enable only what you need. See the feature flag reference below.
+### What's new
 
-### Step 4 — Rebuild
+| Feature | Description |
+|---------|-------------|
+| Pattern matching with bindings | `EnemyState.Chase(target) =>` in `when` branches |
+| Listen lifetime model | `until disable`, `until destroy`, `manual` + `unlisten` |
+| Destructuring | `val Stats(hp, speed) = getStats()` |
+| New Input System sugar | `input.action("Jump").pressed` |
+| Generic type inference | `val rb: Rigidbody = get()` |
 
-Run a clean build to recompile all sources against v2 semantics:
+### Breaking changes
 
-```bash
-prism build
+None. `listen` without a modifier is unchanged (register-only). Pattern bindings are now validated — previously unchecked patterns may produce E081/E082.
+
+### Migration steps
+
+1. Set `version = "2"` in `.prsmproject`
+2. Add desired features to `features` array
+3. Run `prism build` — fix any E081/E082/E083 diagnostics
+4. Adopt new features incrementally:
+   - Add `until disable` to long-lived listen statements
+   - Replace manual cleanup intrinsic blocks with `unlisten`
+   - Use `input.action()` instead of legacy `input.getKey()`
+
+### Rollback
+
+Change `version = "1"` and remove v2-only syntax (`until disable`, `unlisten`, pattern bindings).
+
+---
+
+## PrSM 2 → PrSM 3
+
+### Activation
+
+```toml
+[language]
+version = "3"
+features = ["pattern-bindings", "input-system", "auto-unlisten", "interface", "generics", "singleton", "pool", "solid-analysis", "optimizer"]
 ```
 
-Fix any new diagnostics. The most common ones are E081, E082 (pattern binding validation) and E083 (listen lifetime used outside a component).
+Or use the Unity Editor GUI: **Window > PrSM > Project Settings**.
 
-## Breaking changes in v2
+### What's new
 
-| Change | v1 behavior | v2 behavior | Diagnostic |
-|---|---|---|---|
-| Pattern bindings in `when` | Bindings were not validated against enum definitions | Bindings are validated; mismatched arity or missing variants produce errors | E081, E082 |
-| `listen until disable` / `listen manual` / `unlisten` | Not available | New lifetime modifiers, only valid inside `component` declarations | E083 |
-| `listen` default (no modifier) | Register only, no cleanup | **Unchanged** — still register only, no cleanup | — |
+| Feature | Description |
+|---------|-------------|
+| Interface declaration | `interface IDamageable { func takeDamage(amount: Int) }` |
+| Generic declaration | `class Registry<T> where T : Component { }` |
+| `singleton` keyword | `singleton component GameManager : MonoBehaviour { }` |
+| `pool` modifier | `pool bullets: Bullet(capacity = 20, max = 100)` |
+| SOLID analysis | W010/W011/W012 warnings for design issues |
+| Code optimizer | Single-binding destructure inlining |
+| Reserved names | `get`, `find` are reserved built-in method names (E101) |
 
-### Listen auto-cleanup
+### Breaking changes
 
-In v1, all `listen` blocks were fire-and-forget. In v2 components, listeners are automatically cleaned up when the component is disabled. This prevents common bugs like listeners firing on destroyed objects.
-
-If you relied on listeners surviving disable/enable cycles, switch to `listen manual`:
+**E101 — Reserved method names:** If you have user-defined functions named `get` or `find`, rename them. These names are reserved for built-in sugar methods (`GetComponent`, `FindFirstObjectByType`).
 
 ```prsm
-val token = listen manager.onScoreChanged manual { val score ->
-    updateUI(score)
-}
+// Before (v2) — compiles but may conflict with sugar
+func get(): Item { return items[0] }
 
-// Later, when you are done:
-unlisten token
+// After (v3) — rename to avoid E101
+func getItem(): Item { return items[0] }
 ```
 
-### Pattern binding validation
+### Migration steps
 
-v2 validates that pattern bindings in `when` expressions match the actual enum definition. Code that previously compiled with unchecked bindings may now produce E081 (unknown variant) or E082 (wrong number of parameters) errors.
+1. Set `version = "3"` in `.prsmproject` (or use **Window > PrSM > Project Settings**)
+2. Run `prism build` — fix any E101 diagnostics (rename `get`/`find` functions)
+3. Review SOLID warnings (W010/W011/W012) and refactor if desired
+4. Adopt new features incrementally:
+   - Define interfaces for component contracts
+   - Use `singleton` instead of manual singleton boilerplate
+   - Use `pool` instead of manual object pool management
+   - Add generics to utility classes
 
-```prsm
-enum Result {
-    Ok(value: Int),
-    Err(message: String)
-}
+### Rollback
 
-when result {
-    Result.Ok(v)     => handleOk(v)       // valid
-    Result.Err(m)    => handleErr(m)      // valid
-    Result.Unknown   => { }               // E081 — no such variant
-}
-```
+Change `version = "2"` and remove v3-only syntax (`interface`, generic params, `singleton`, `pool`).
 
-### Listen lifetime scope
-
-`listen until disable`, `listen manual`, and `unlisten` are only valid inside `component` declarations. Using them in a `class`, `asset`, or top-level scope produces E083.
-
-## New features available in v2
-
-| Feature | Description | Documentation |
-|---|---|---|
-| Pattern matching with bindings | Destructure enum variants in `when` branches | [Pattern Matching & Control Flow](pattern-matching-and-control-flow.md) |
-| Listen lifetime model | `until disable`, `manual`, and `unlisten` for event subscriptions | [Events & Intrinsic](events-and-intrinsic.md) |
-| New Input System sugar | `on input action { }` syntax for Unity Input System | [Input System](input-system.md) |
-| Generic type inference | Compiler infers generic arguments from usage context | [Generic Inference](generic-inference.md) |
+---
 
 ## Feature flag reference
 
-| Flag | Requires | Description |
-|---|---|---|
-| `"pattern-bindings"` | v2.0 | Enables destructuring bindings in `when` branches. Without this flag, `when` branches use v1 syntax only. |
-| `"input-system"` | v2.0 | Enables `on input` sugar for the new Unity Input System. Requires the Input System package in your Unity project. |
-| `"auto-unlisten"` | v2.0 | Enables the `until disable` / `manual` / `unlisten` lifetime model for `listen`. Without this flag, `listen` uses v1 register-only semantics even in v2. |
+| Flag | Since | Description |
+|------|-------|-------------|
+| `pattern-bindings` | PrSM 2 | Enum payload binding, destructuring, when guards |
+| `input-system` | PrSM 2 | Input System sugar (requires Unity Input System package) |
+| `auto-unlisten` | PrSM 2 | Listen lifetime modifiers and unlisten |
+| `interface` | PrSM 3 | Interface declaration |
+| `generics` | PrSM 3 | Generic class/func with where clauses |
+| `singleton` | PrSM 3 | Singleton component keyword |
+| `pool` | PrSM 3 | Object pool modifier |
+| `solid-analysis` | PrSM 3 | SOLID analysis warnings |
+| `optimizer` | PrSM 3 | Code optimizer |
 
-Example `.prsmproject` with all flags:
-
-```toml
-[project]
-name = "MyGame"
-unity = "2022.3"
-
-[language]
-version = "2.0"
-features = ["pattern-bindings", "input-system", "auto-unlisten"]
-
-[output]
-path = "Assets/Generated"
-```
-
-## Rollback to v1
-
-If you need to revert to v1:
-
-1. Change the version back:
-
-```toml
-[language]
-version = "1.0"
-```
-
-2. Remove any v2-only syntax from your `.prsm` files:
-   - Replace `listen ... until disable { }` with plain `listen ... { }`
-   - Remove `listen ... manual { }` and `unlisten` statements
-   - Remove pattern bindings from `when` branches (use plain matching)
-   - Remove `on input` blocks (use `listen` with the appropriate Unity event instead)
-
-3. Rebuild:
-
-```bash
-prism build
-```
-
-The compiler will report errors for any remaining v2 syntax, so you can fix them incrementally.
+Setting `version = "N"` implicitly enables all features for that version and below.

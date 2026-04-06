@@ -53,7 +53,7 @@
       { "id": "grammar", "title": "Formal Grammar", "path": "docs/en/grammar.md" },
       { "id": "error-catalog", "title": "Error Catalog", "path": "docs/en/error-catalog.md" },
       { "id": "idioms", "title": "Idioms & Patterns", "path": "docs/en/idioms.md" },
-      { "id": "migration", "title": "v1 → v2 Migration", "path": "docs/en/migration-v1-to-v2.md" }
+      { "id": "migration", "title": "Version Migration", "path": "docs/en/migration-v1-to-v2.md" }
     ]
   },
   {
