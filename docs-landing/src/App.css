@@ -701,6 +701,13 @@
 .prsm-builtin { color: #cf8e6d; }
 
 
+/* Heading section dividers */
+.brand-docs__heading-rule {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 2.5em 0 0.5em;
+}
+
 /* Version markers — inline (PrSM 2 부터) text */
 .prsm-version-marker {
   color: #6aab73;

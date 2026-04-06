@@ -335,6 +335,7 @@ function SimpleMarkdown({ content }: { content: string }) {
   
   let inList = false;
   let listItems: string[] = [];
+  let headingCount = 0;
 
   let inTable = false;
   let tableRows: string[] = [];
@@ -444,11 +445,15 @@ function SimpleMarkdown({ content }: { content: string }) {
     } else if (line.startsWith('# ')) {
       const text = line.slice(2);
       const id = text.toLowerCase().replace(/[^\w]+/g, '-');
+      if (headingCount > 0) elements.push(<hr key={`hr-${i}`} className="brand-docs__heading-rule" />);
       elements.push(<h1 key={i} id={id}>{renderInlineMarkdown(text)}</h1>);
+      headingCount++;
     } else if (line.startsWith('## ')) {
       const text = line.slice(3);
       const id = text.toLowerCase().replace(/[^\w]+/g, '-');
+      if (headingCount > 0) elements.push(<hr key={`hr-${i}`} className="brand-docs__heading-rule" />);
       elements.push(<h2 key={i} id={id}>{renderInlineMarkdown(text)}</h2>);
+      headingCount++;
     } else if (line.startsWith('### ')) {
       elements.push(<h3 key={i}>{renderInlineMarkdown(line.slice(4))}</h3>);
     } else if (line.trim()) {
