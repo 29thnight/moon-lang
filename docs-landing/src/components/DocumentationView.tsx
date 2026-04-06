@@ -278,7 +278,7 @@ const CodeBlock = ({ children, className }: { children: string; className?: stri
 
 const renderInlineMarkdown = (text: string) => {
   // Split on: inline code, bold, links, and version markers
-  return text.split(/(`[^`]+`|\*\*[^*]+\*\*|\[([^\]]+)\]\(([^)]+)\)|\(PrSM \d[\d.]* 부터\)|\([Ss]ince PrSM \d[\d.]*\))/).filter(Boolean).map((part, i) => {
+  return text.split(/(`[^`]+`|\*\*[^*]+\*\*|\[[^\]]+\]\([^)]+\)|\(PrSM \d[\d.]* 부터\)|\([Ss]ince PrSM \d[\d.]*\))/).filter(Boolean).map((part, i) => {
     if (part.startsWith('`')) return <code key={i}>{part.slice(1, -1)}</code>;
     if (part.startsWith('**')) return <strong key={i}>{part.slice(2, -2)}</strong>;
     if (/^\((?:PrSM \d|[Ss]ince PrSM \d)/.test(part)) {
