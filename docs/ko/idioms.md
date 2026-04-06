@@ -279,6 +279,6 @@ func captureScreenshot() {
 - 표준 Unity 라이프사이클 — `awake`, `start`, `update`, `onDestroy` 블록 사용
 - 이벤트 연결 — `listen` 사용
 - 코루틴 — `coroutine`과 `wait` 사용
-- 입력 — `on input` 사용 (v2)
+- 입력 — `on input` 사용 (PrSM 2 부터)
 
 큰 `intrinsic` 블록을 자주 작성하게 된다면, 해당 패턴을 네이티브로 지원할 수 있도록 기능 요청을 제출하는 것을 고려하세요.

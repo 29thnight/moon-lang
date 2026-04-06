@@ -279,6 +279,6 @@ func captureScreenshot() {
 - Standard Unity lifecycle — use `awake`, `start`, `update`, `onDestroy` blocks
 - Event wiring — use `listen`
 - Coroutines — use `coroutine` and `wait`
-- Input — use `on input` (v2)
+- Input — use `on input` (PrSM 2 부터)
 
 If you find yourself writing large `intrinsic` blocks frequently, consider filing a feature request so the pattern can be supported natively.

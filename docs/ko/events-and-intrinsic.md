@@ -37,8 +37,6 @@ listen healthBar.onValueChanged { val newValue ->
 
 ### listen 수명 정책 (PrSM 2 부터)
 
-(PrSM 2 부터)
-
 v2는 리스너 정리를 자동 관리하는 명시적 수명 정책을 도입합니다. `component` 선언 내부에서만 유효합니다 (외부 사용 시 에러 E083).
 
 #### `until disable` — OnDisable에서 자동 정리

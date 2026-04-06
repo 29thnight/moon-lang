@@ -52,7 +52,7 @@ public class Player : MonoBehaviour
 }
 ```
 
-### Listen with lifetime (v2)
+### Listen with lifetime (PrSM 2 부터)
 
 ```prsm
 component UI : MonoBehaviour {

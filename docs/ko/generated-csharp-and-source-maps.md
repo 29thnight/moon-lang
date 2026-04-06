@@ -52,7 +52,7 @@ public class Player : MonoBehaviour
 }
 ```
 
-### listen 수명 정책 (v2)
+### listen 수명 정책 (PrSM 2 부터)
 
 ```prsm
 component UI : MonoBehaviour {

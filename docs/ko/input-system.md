@@ -166,7 +166,7 @@ Unity Input System 패키지가 설치되어 있는지 확인하세요.
 PrSM v1은 Unity의 레거시 `UnityEngine.Input` API를 위한 구문 설탕을
 제공했습니다:
 
-| 레거시 구문 설탕 (v1) | New Input System 구문 설탕 (v2) |
+| 레거시 구문 설탕 (PrSM 1) | New Input System 구문 설탕 (PrSM 2 부터) |
 |---|---|
 | `input.getKey(KeyCode.Space)` | `input.action("Jump").pressed` |
 | `input.axis("Horizontal")` | `input.action("Move").vector2.x` |
