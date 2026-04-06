@@ -6,7 +6,7 @@ nav_order: 1
 
 # PrSM 언어 표준
 
-**Language 2 — 작업 초안**
+**작업 초안**
 
 ## 1 범위 [scope]
 
@@ -20,9 +20,7 @@ C# 출력을 생성해야 한다.
 
 ### 1.2 언어 버전
 
-이 문서는 **Language 2**(현재)를 정의한다. Language 1에 존재하지 않았던
-기능은 도입 시점에 다음과 같이 표시된다: (PrSM 2 부터)
-
+이 문서는 현재 PrSM 언어 사양을 정의한다. 버전별 기능 요약은 [PrSM 1](lang-1.md), [PrSM 2](lang-2.md), [PrSM 3](lang-3.md)을 참조한다.
 ### 1.3 대상 플랫폼
 
 적합한 구현은 **Mono** 또는 **IL2CPP** 스크립팅 백엔드에서 실행되는
@@ -341,8 +339,7 @@ var alive = true          // Bool로 추론
 - `require`, `optional`, `child`, `parent` 필드.
 - 이니셜라이저가 없는 필드.
 
-### 4.6 제네릭 타입 추론 [type.infer.generic] (PrSM 2 부터)
-
+### 4.6 제네릭 타입 추론 [type.infer.generic]
 변수 선언에 명시적 타입 주석이 있는 경우, 제네릭 편의 메서드(`get`,
 `find`, `child`, `parent`, `require`)는 타입 인자를 생략할 수 있다.
 컴파일러는 선언의 타입 주석에서 타입 인자를 추론해야 한다.
@@ -630,8 +627,7 @@ public class CooldownAttribute : System.Attribute {
 }
 ```
 
-### 5.9 기능 게이트 [decl.feature] (PrSM 2 부터)
-
+### 5.9 기능 게이트 [decl.feature]
 `.prsmproject` 파일은 언어 버전과 활성화된 기능 세트를 제어한다.
 적합한 구현은 `language.version` 필드를 읽어 언어 수준을 결정하고
 `features` 배열에 나열된 기능만 활성화해야 한다.
@@ -1410,8 +1406,7 @@ for (int i = 0; i < 10; i += 2) {
 | `input.getKeyUp(key)` | `Input.GetKeyUp(key)` |
 | `input.getMouseButton(n)` | `Input.GetMouseButton(n)` |
 
-### 9.10 제네릭 타입 추론 (PrSM 2 부터)
-
+### 9.10 제네릭 타입 추론
 제네릭 편의 호출이 모호하지 않은 대상 타입이 있는 컨텍스트에 나타나면, 컴파일러는 타입 인자를 추론해야 한다.
 
 ```prsm
@@ -1426,8 +1421,7 @@ val rb: Rigidbody = get()   // get<Rigidbody>()로 추론
 
 컴파일러는 단일 모호하지 않은 해를 요구해야 한다. 추론이 실패하면 컴파일러는 명시적 타입 인자를 요청하는 **E020**을 발행해야 한다.
 
-### 9.11 `when`의 패턴 바인딩 (PrSM 2 부터)
-
+### 9.11 `when`의 패턴 바인딩
 `when` 분기가 페이로드 enum 변형과 일치할 때, 바인딩이 페이로드 값을 추출한다:
 
 ```prsm
@@ -1534,8 +1528,7 @@ when {
 
 #### 완전성
 
-`when` 문이 enum 타입에 대해 매칭하고 모든 변형을 커버하지 않으며 `else` 분기가 없는 경우, 컴파일러는 경고 **W003**을 발행해야 한다. (PrSM 2 부터)
-
+`when` 문이 enum 타입에 대해 매칭하고 모든 변형을 커버하지 않으며 `else` 분기가 없는 경우, 컴파일러는 경고 **W003**을 발행해야 한다.
 #### 패턴 바인딩
 
 ```prsm
@@ -1623,8 +1616,7 @@ continue
 
 `break`와 `continue`는 `for` 또는 `while` 루프 본문 내에서만 나타나야 한다. 루프 외부에서 사용하면 **E031**이 생성된다.
 
-### 10.10 구조 분해 `val` (PrSM 2 부터)
-
+### 10.10 구조 분해 `val`
 ```prsm
 val Result.Ok(value) = expr
 ```
@@ -1726,10 +1718,9 @@ unlisten token
 
 #### 기본 동작
 
-수명 수정자 없이 `listen`은 리스너만 등록한다. 자동 정리는 생성되지 않는다. 이 동작은 Language 1과 Language 2에서 동일하다.
+수명 수정자 없이 `listen`은 리스너만 등록한다. 자동 정리는 생성되지 않는다. 이 동작은 모든 언어 버전에서 동일하다.
 
-### 10.12 Input System 편의 구문 (PrSM 2 부터)
-
+### 10.12 Input System 편의 구문
 Input System 편의 구문은 `.prsmproject`에서 `input-system` 기능 플래그를 필요로 한다. 플래그 없이 입력 편의 구문을 사용하면 **E070**이 생성된다.
 
 #### 기본 형태
@@ -1992,8 +1983,7 @@ var msg = $"Player {name} has {health} HP";
 
 `$identifier` 짧은 형태와 `${expression}` 긴 형태 모두 C# `$"..."` 문자열 내의 `{expression}`으로 로우어링되어야 한다.
 
-### 12.7 Listen 수명 로우어링 (PrSM 2 부터)
-
+### 12.7 Listen 수명 로우어링
 수명 수정자가 있는 각 `listen` 문에 대해 컴파일러는:
 
 1. 적절한 delegate 타입의 private 핸들러 필드(`_prsm_h0`, `_prsm_h1`, ...)를 생성한다.
@@ -2005,8 +1995,7 @@ var msg = $"Player {name} has {health} HP";
 
 component가 이미 대상 생명주기 블록을 선언하고 있으면, 컴파일러는 사용자 본문 뒤에 정리 코드를 추가해야 한다. 해당 블록이 없으면 컴파일러는 생명주기 메서드를 합성해야 한다.
 
-### 12.8 패턴 바인딩 로우어링 (PrSM 2 부터)
-
+### 12.8 패턴 바인딩 로우어링
 `when` 분기의 패턴 바인딩은 enum 태그에 대한 `switch`로 로우어링되고, 이어서 튜플 필드 추출이 수행되어야 한다:
 
 ```prsm
@@ -2029,8 +2018,7 @@ switch (result.Tag) {
 }
 ```
 
-### 12.9 Input System 로우어링 (PrSM 2 부터)
-
+### 12.9 Input System 로우어링
 component가 Input System 편의 구문을 사용하면, 컴파일러는:
 
 1. private 필드를 내보낸다: `private PlayerInput _prsmInput;`

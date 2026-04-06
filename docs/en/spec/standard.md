@@ -6,7 +6,7 @@ nav_order: 1
 
 # PrSM Language Standard
 
-**Language 2 — Working Draft**
+**Working Draft**
 
 ## 1 Scope [scope]
 
@@ -20,7 +20,7 @@ in S12 for that program.
 
 ### 1.2 Language version
 
-This document defines **Language 2** (current). Features that were not present in Language 1 are marked with (since PrSM 2) at the point of introduction.
+This document defines the current PrSM language specification. For version-specific feature summaries, see [PrSM 1](lang-1.md), [PrSM 2](lang-2.md), [PrSM 3](lang-3.md).
 
 ### 1.3 Target platform
 
@@ -349,8 +349,7 @@ explicit type annotations:
 - `require`, `optional`, `child`, and `parent` fields.
 - Fields without initializers.
 
-### 4.6 Generic type inference [type.infer.generic] (since PrSM 2)
-
+### 4.6 Generic type inference [type.infer.generic]
 When a variable declaration has an explicit type annotation, generic sugar
 methods (`get`, `find`, `child`, `parent`, `require`) may omit their type
 argument. The compiler shall infer the type argument from the declaration's
@@ -639,8 +638,7 @@ public class CooldownAttribute : System.Attribute {
 }
 ```
 
-### 5.9 Feature gates [decl.feature] (since PrSM 2)
-
+### 5.9 Feature gates [decl.feature]
 The `.prsmproject` file controls the language version and enabled feature set.
 A conforming implementation shall read the `language.version` field to
 determine the language level and shall enable only those features listed in the
@@ -1418,8 +1416,7 @@ The compiler shall recognize the following call-site sugar and lower them to the
 | `input.getKeyUp(key)` | `Input.GetKeyUp(key)` |
 | `input.getMouseButton(n)` | `Input.GetMouseButton(n)` |
 
-### 9.10 Generic Type Inference (since PrSM 2)
-
+### 9.10 Generic Type Inference
 When a generic sugar call appears in a context with an unambiguous target type, the compiler shall infer the type argument.
 
 ```prsm
@@ -1434,8 +1431,7 @@ Inference rules, in priority order:
 
 The compiler shall require a single unambiguous solution. If inference fails, the compiler shall emit **E020** requesting an explicit type argument.
 
-### 9.11 Pattern Bindings in `when` (since PrSM 2)
-
+### 9.11 Pattern Bindings in `when`
 When a `when` branch matches a payload enum variant, bindings extract the payload values:
 
 ```prsm
@@ -1542,8 +1538,7 @@ Without a subject, each branch condition is an independent Boolean expression. T
 
 #### Exhaustiveness
 
-When a `when` statement matches on an enum type and does not cover all variants and has no `else` branch, the compiler shall emit warning **W003**. (since PrSM 2)
-
+When a `when` statement matches on an enum type and does not cover all variants and has no `else` branch, the compiler shall emit warning **W003**.
 #### Pattern bindings
 
 ```prsm
@@ -1631,8 +1626,7 @@ continue
 
 `break` and `continue` shall only appear inside `for` or `while` loop bodies. Use outside a loop shall produce **E031**.
 
-### 10.10 Destructuring `val` (since PrSM 2)
-
+### 10.10 Destructuring `val`
 ```prsm
 val Result.Ok(value) = expr
 ```
@@ -1734,10 +1728,9 @@ The `unlisten` statement shall resolve the token to its backing handler field, e
 
 #### Default behavior
 
-Without a lifetime modifier, `listen` shall register the listener only. No auto-cleanup is generated. This behavior is identical in Language 1 and Language 2.
+Without a lifetime modifier, `listen` shall register the listener only. No auto-cleanup is generated. This behavior is identical across all language versions.
 
-### 10.12 Input System Sugar (since PrSM 2)
-
+### 10.12 Input System Sugar
 Input System sugar requires the `input-system` feature flag in `.prsmproject`. Using input sugar without the flag shall produce **E070**.
 
 #### Basic form
@@ -2000,8 +1993,7 @@ var msg = $"Player {name} has {health} HP";
 
 The `$identifier` short form and `${expression}` long form shall both lower to `{expression}` inside a C# `$"..."` string.
 
-### 12.7 Listen Lifetime Lowering (since PrSM 2)
-
+### 12.7 Listen Lifetime Lowering
 For each `listen` statement with a lifetime modifier, the compiler shall:
 
 1. Generate a private handler field (`_prsm_h0`, `_prsm_h1`, ...) of the appropriate delegate type.
@@ -2013,8 +2005,7 @@ For each `listen` statement with a lifetime modifier, the compiler shall:
 
 If the component already declares the target lifecycle block, the compiler shall append cleanup code after the user body. If no such block exists, the compiler shall synthesize the lifecycle method.
 
-### 12.8 Pattern Binding Lowering (since PrSM 2)
-
+### 12.8 Pattern Binding Lowering
 Pattern bindings in `when` branches shall lower to `switch` on the enum tag, followed by tuple field extraction:
 
 ```prsm
@@ -2037,8 +2028,7 @@ switch (result.Tag) {
 }
 ```
 
-### 12.9 Input System Lowering (since PrSM 2)
-
+### 12.9 Input System Lowering
 When a component uses input system sugar, the compiler shall:
 
 1. Emit a private field: `private PlayerInput _prsmInput;`
