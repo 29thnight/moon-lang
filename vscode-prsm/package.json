@@ -394,6 +394,7 @@
     "watch:tests": "tsc -watch -p ./",
     "package": "node ./scripts/package-vsix.mjs",
     "verify": "node ./scripts/verify-package.mjs",
+    "verify:install": "node ./scripts/verify-install.mjs",
     "vscode:prepublish": "npm run compile"
   },
   "devDependencies": {

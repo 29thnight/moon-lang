@@ -17,10 +17,10 @@ As of the current repository snapshot:
 - generated C# back-mapping through `.prsmmap.json` is implemented in both the VS Code extension and Unity package tooling
 - in-repo lowering regression coverage includes event-listener sugar and intrinsic escape-hatch paths
 - BlazeTest smoke coverage and package-level editor tests already exist
+- VS Code extension distribution now has automated VSIX packaging, bundled artifact verification, and isolated install smoke coverage
 
 What is still incomplete:
 
 - broader negative test coverage
-- packaging and installation verification hardening for extension distribution
 - deeper debugging and source-map workflows beyond the current foundation
 - broader end-to-end validation across real Unity projects

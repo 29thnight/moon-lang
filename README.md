@@ -68,6 +68,8 @@ powershell -ExecutionPolicy Bypass -File .\run-blazetest-smoke.ps1
 powershell -ExecutionPolicy Bypass -File .\run-verification.ps1
 ```
 
+The repository verification flow now includes VS Code extension packaging, bundled artifact verification, and an isolated VSIX install smoke.
+
 ## License
 
 This repository is currently published as `UNLICENSED`. See [LICENSE](LICENSE).

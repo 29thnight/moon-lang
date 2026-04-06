@@ -65,11 +65,31 @@ if (-not $SkipRust) {
 }
 
 if (-not $SkipVsCode) {
+    $vsCodeRoot = Join-Path $repoRoot "vscode-prsm"
+
     Invoke-NativeStep `
         -Name "VS Code extension tests" `
-        -WorkingDirectory (Join-Path $repoRoot "vscode-prsm") `
+        -WorkingDirectory $vsCodeRoot `
         -FilePath "npm" `
         -Arguments @("test")
+
+    Invoke-NativeStep `
+        -Name "VS Code VSIX package" `
+        -WorkingDirectory $vsCodeRoot `
+        -FilePath "npm" `
+        -Arguments @("run", "package")
+
+    Invoke-NativeStep `
+        -Name "VS Code package verify" `
+        -WorkingDirectory $vsCodeRoot `
+        -FilePath "npm" `
+        -Arguments @("run", "verify")
+
+    Invoke-NativeStep `
+        -Name "VS Code install smoke" `
+        -WorkingDirectory $vsCodeRoot `
+        -FilePath "npm" `
+        -Arguments @("run", "verify:install")
 }
 
 if (-not $SkipUnity) {

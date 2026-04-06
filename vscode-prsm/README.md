@@ -38,6 +38,9 @@ PrSM brings Unity-first `.prsm` scripting to Visual Studio Code with diagnostics
 npm install
 npm test
 npm run package
+npm run verify
+npm run verify:install
 ```
 
 `npm run package` now writes a VSIX under `artifacts/` and verifies that the packaged `dist/extension.js` and `bin/prism.exe` exactly match the current workspace build outputs.
+`npm run verify` checks bundled `bin/prism.exe` freshness and CLI behavior, while `npm run verify:install` installs the generated VSIX into an isolated VS Code profile and verifies the extracted manifest, bundle, and bundled compiler.
