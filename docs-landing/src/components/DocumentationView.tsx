@@ -556,7 +556,23 @@ export default function DocumentationView({ initialDocId = 'index', lang }: Docu
                 <span>Loading documentation...</span>
               </div>
             ) : (
-              <article className="brand-docs__article">
+              <article className="brand-docs__article" onClick={(e) => {
+                // Intercept internal .md links and navigate within the docs viewer
+                const target = e.target as HTMLElement;
+                const anchor = target.closest('a');
+                if (!anchor) return;
+                const href = anchor.getAttribute('href');
+                if (!href || !href.endsWith('.md')) return;
+                e.preventDefault();
+                // Extract filename without extension and path prefix
+                const filename = href.replace(/^.*\//, '').replace(/\.md$/, '');
+                // Find matching route by id or by path suffix
+                const match = routes.find(r => r.id === filename || r.path.endsWith('/' + href) || r.path.endsWith(href));
+                if (match) {
+                  setActiveDocId(match.id);
+                  window.scrollTo(0, 0);
+                }
+              }}>
                 <SimpleMarkdown content={content} />
               </article>
             )}
