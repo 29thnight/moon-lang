@@ -1,4 +1,4 @@
-use crate::ast::{Block, Decl, ElseBranch, Expr, File, FuncBody, Member, Stmt, StringPart, TypeRef, WaitForm, WhenBody, WhenPattern};
+use crate::ast::{Block, Decl, ElseBranch, Expr, File, FuncBody, Member, Stmt, StringPart, TypeRef, UsingDecl, WaitForm, WhenBody, WhenPattern};
 use crate::diagnostics::{Diagnostic, Severity};
 use crate::driver;
 use crate::hir::{HirDefinition, HirDefinitionKind};
@@ -42,6 +42,8 @@ const WORKSPACE_SYMBOL: &str = "workspace/symbol";
 
 const INVALID_PARAMS: i32 = -32602;
 const METHOD_NOT_FOUND: i32 = -32601;
+const CODE_ACTION_KIND_REFACTOR_REWRITE: &str = "refactor.rewrite";
+const CODE_ACTION_KIND_SOURCE_ORGANIZE_IMPORTS: &str = "source.organizeImports";
 const ROSLYN_SIDECAR_EXE_ENV: &str = "PRISM_ROSLYN_SIDECAR_EXE";
 const ROSLYN_SIDECAR_ARGS_ENV: &str = "PRISM_ROSLYN_SIDECAR_ARGS";
 const UNITY_MANAGED_DIR_ENV: &str = "PRISM_UNITY_MANAGED_DIR";
@@ -59,7 +61,7 @@ pub fn run_server() -> Result<(), String> {
         "referencesProvider": true,
         "hoverProvider": true,
         "codeActionProvider": {
-            "codeActionKinds": ["refactor.rewrite"]
+            "codeActionKinds": ["refactor.rewrite", "source.organizeImports"]
         },
         "renameProvider": {
             "prepareProvider": true
@@ -171,6 +173,12 @@ struct ExplicitTypeArgCodeAction {
 #[derive(Debug, Clone)]
 struct LspCallableSignature {
     params: Vec<TypeRef>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OrganizeUsingsCodeAction {
+    range: Span,
+    new_text: String,
 }
 
 struct RoslynSidecarSession {
@@ -435,12 +443,18 @@ impl PrismLspServer {
             Ok(target) => target,
             Err(error) => return self.send_error(request.id, INVALID_PARAMS, error),
         };
+        let requested_kinds = parse_requested_code_action_kinds(&request.params);
 
         let Some(document_text) = self.read_document_text(&target.file_path) else {
             return self.send_ok(request.id, json!([]));
         };
 
-        let actions = collect_explicit_type_arg_actions_json(&document_text, &target.uri, target.span);
+        let actions = collect_code_actions_json(
+            &document_text,
+            &target.uri,
+            target.span,
+            requested_kinds.as_deref(),
+        );
         self.send_ok(request.id, Value::Array(actions))
     }
 
@@ -1364,11 +1378,92 @@ fn parse_text_document_range(params: &Value) -> Result<TextDocumentRange, String
     })
 }
 
+fn parse_requested_code_action_kinds(params: &Value) -> Option<Vec<String>> {
+    let kinds = params
+        .get("context")
+        .and_then(|context| context.get("only"))
+        .and_then(Value::as_array)
+        .map(|kinds| {
+            kinds
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if kinds.is_empty() {
+        None
+    } else {
+        Some(kinds)
+    }
+}
+
+fn collect_code_actions_json(
+    source: &str,
+    uri: &str,
+    selection_span: Span,
+    requested_kinds: Option<&[String]>,
+) -> Vec<Value> {
+    let mut actions = Vec::new();
+
+    if requested_code_action_allows(requested_kinds, CODE_ACTION_KIND_REFACTOR_REWRITE) {
+        actions.extend(collect_explicit_type_arg_actions_json(source, uri, selection_span));
+    }
+
+    if requested_code_action_allows(requested_kinds, CODE_ACTION_KIND_SOURCE_ORGANIZE_IMPORTS) {
+        if let Some(action) = collect_organize_usings_action_for_source(source) {
+            actions.push(organize_usings_code_action_json(uri, action));
+        }
+    }
+
+    actions
+}
+
+fn requested_code_action_allows(requested_kinds: Option<&[String]>, offered_kind: &str) -> bool {
+    requested_kinds.map_or(true, |requested_kinds| {
+        requested_kinds
+            .iter()
+            .any(|requested_kind| code_action_kind_matches(requested_kind, offered_kind))
+    })
+}
+
+fn code_action_kind_matches(requested_kind: &str, offered_kind: &str) -> bool {
+    requested_kind == offered_kind
+        || offered_kind
+            .strip_prefix(requested_kind)
+            .map(|suffix| suffix.starts_with('.'))
+            .unwrap_or(false)
+}
+
 fn collect_explicit_type_arg_actions_json(source: &str, uri: &str, selection_span: Span) -> Vec<Value> {
     collect_explicit_type_arg_actions_for_source(source, selection_span)
         .into_iter()
         .map(|action| explicit_type_arg_code_action_json(uri, action))
         .collect()
+}
+
+fn collect_organize_usings_action_for_source(source: &str) -> Option<OrganizeUsingsCodeAction> {
+    let file = parse_prsm_file(source);
+    let first_using = file.usings.first()?;
+    let using_block_range = Span {
+        start: first_using.span.start,
+        end: decl_start_position(&file.decl),
+    };
+    let current_using_text = source_text_for_span(source, using_block_range)?;
+    if using_block_contains_comments(current_using_text) {
+        return None;
+    }
+
+    let new_text = organized_usings_text(&file.usings, detect_line_ending(source));
+    if current_using_text == new_text {
+        return None;
+    }
+
+    Some(OrganizeUsingsCodeAction {
+        range: using_block_range,
+        new_text,
+    })
 }
 
 fn collect_explicit_type_arg_actions_for_source(
@@ -1415,12 +1510,91 @@ fn parse_prsm_file(source: &str) -> File {
     parser.parse_file()
 }
 
+fn organized_usings_text(usings: &[UsingDecl], line_ending: &str) -> String {
+    let mut using_paths = usings
+        .iter()
+        .map(|using| using.path.trim().to_string())
+        .filter(|using| !using.is_empty())
+        .collect::<Vec<_>>();
+    using_paths.sort();
+    using_paths.dedup();
+
+    if using_paths.is_empty() {
+        return String::new();
+    }
+
+    let mut text = using_paths
+        .into_iter()
+        .map(|using| format!("using {}", using))
+        .collect::<Vec<_>>()
+        .join(line_ending);
+    text.push_str(line_ending);
+    text.push_str(line_ending);
+    text
+}
+
+fn detect_line_ending(source: &str) -> &'static str {
+    if source.contains("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    }
+}
+
+fn using_block_contains_comments(text: &str) -> bool {
+    text.contains("//") || text.contains("/*")
+}
+
+fn source_text_for_span<'a>(source: &'a str, span: Span) -> Option<&'a str> {
+    let start = offset_for_position(source, span.start)?;
+    let end = offset_for_position(source, span.end)?;
+    source.get(start..end)
+}
+
+fn offset_for_position(source: &str, position: Position) -> Option<usize> {
+    if position.line == 1 && position.col == 1 {
+        return Some(0);
+    }
+
+    let mut current_line = 1u32;
+    let mut current_col = 1u32;
+    for (index, ch) in source.char_indices() {
+        if current_line == position.line && current_col == position.col {
+            return Some(index);
+        }
+
+        if ch == '\n' {
+            current_line += 1;
+            current_col = 1;
+        } else {
+            current_col += 1;
+        }
+    }
+
+    if current_line == position.line && current_col == position.col {
+        Some(source.len())
+    } else {
+        None
+    }
+}
+
 fn decl_members(decl: &Decl) -> Option<&[Member]> {
     match decl {
         Decl::Component { members, .. }
         | Decl::Asset { members, .. }
         | Decl::Class { members, .. } => Some(members.as_slice()),
         Decl::DataClass { .. } | Decl::Enum { .. } | Decl::Attribute { .. } => None,
+    }
+}
+
+fn decl_start_position(decl: &Decl) -> Position {
+    match decl {
+        Decl::Component { span, .. }
+        | Decl::Asset { span, .. }
+        | Decl::Class { span, .. }
+        | Decl::DataClass { span, .. }
+        | Decl::Enum { span, .. }
+        | Decl::Attribute { span, .. } => span.start,
     }
 }
 
@@ -2027,8 +2201,27 @@ fn explicit_type_arg_code_action_json(uri: &str, action: ExplicitTypeArgCodeActi
 
     json!({
         "title": action.title,
-        "kind": "refactor.rewrite",
+        "kind": CODE_ACTION_KIND_REFACTOR_REWRITE,
         "isPreferred": true,
+        "edit": {
+            "changes": changes,
+        },
+    })
+}
+
+fn organize_usings_code_action_json(uri: &str, action: OrganizeUsingsCodeAction) -> Value {
+    let mut changes = HashMap::new();
+    changes.insert(
+        uri.to_string(),
+        vec![json!({
+            "range": lsp_range_json(action.range),
+            "newText": action.new_text,
+        })],
+    );
+
+    json!({
+        "title": "Organize using declarations",
+        "kind": CODE_ACTION_KIND_SOURCE_ORGANIZE_IMPORTS,
         "edit": {
             "changes": changes,
         },
@@ -2860,8 +3053,9 @@ fn clamp_index(value: usize, max: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::{
-        collect_explicit_type_arg_actions_for_source, format_sidecar_hover_section, merge_completion_items,
-        parse_sidecar_args, prsm_label_for_sidecar_item,
+        collect_explicit_type_arg_actions_for_source, collect_organize_usings_action_for_source,
+        format_sidecar_hover_section, merge_completion_items, parse_sidecar_args,
+        prsm_label_for_sidecar_item, requested_code_action_allows,
     };
     use crate::lexer::token::{Position, Span};
     use crate::roslyn_sidecar_protocol::{SidecarCompletionItemKind, SidecarSymbolKind, SidecarSymbolSource, UnityCompletionItem, UnityHoverResult};
@@ -2986,6 +3180,65 @@ mod tests {
         );
 
         assert!(actions.is_empty());
+    }
+
+    #[test]
+    fn lsp_code_actions_offer_organize_usings_when_sort_or_dedupe_needed() {
+        let action = collect_organize_usings_action_for_source(
+            r#"using UnityEngine.UI
+using UnityEngine
+using UnityEngine.UI
+component Player : MonoBehaviour {
+}"#,
+        )
+        .expect("organize imports action should exist");
+
+        assert_eq!(
+            action.new_text,
+            "using UnityEngine\nusing UnityEngine.UI\n\n"
+        );
+    }
+
+    #[test]
+    fn lsp_code_actions_skip_organize_usings_when_already_normalized() {
+        let action = collect_organize_usings_action_for_source(
+            r#"using UnityEngine
+using UnityEngine.UI
+
+component Player : MonoBehaviour {
+}"#,
+        );
+
+        assert!(action.is_none());
+    }
+
+    #[test]
+    fn lsp_code_actions_skip_organize_usings_when_comments_would_be_lost() {
+        let action = collect_organize_usings_action_for_source(
+            r#"using UnityEngine
+// keep this note
+using UnityEngine.UI
+component Player : MonoBehaviour {
+}"#,
+        );
+
+        assert!(action.is_none());
+    }
+
+    #[test]
+    fn lsp_code_action_kind_matching_allows_parent_kinds() {
+        assert!(requested_code_action_allows(
+            Some(&["source".to_string()]),
+            super::CODE_ACTION_KIND_SOURCE_ORGANIZE_IMPORTS,
+        ));
+        assert!(requested_code_action_allows(
+            Some(&["refactor".to_string()]),
+            super::CODE_ACTION_KIND_REFACTOR_REWRITE,
+        ));
+        assert!(!requested_code_action_allows(
+            Some(&["quickfix".to_string()]),
+            super::CODE_ACTION_KIND_SOURCE_ORGANIZE_IMPORTS,
+        ));
     }
 
     fn explicit_type_arg_actions_from_marked_source(marked: &str) -> Vec<super::ExplicitTypeArgCodeAction> {
