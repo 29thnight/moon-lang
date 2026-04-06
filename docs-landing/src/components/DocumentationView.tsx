@@ -160,6 +160,59 @@ const highlightCode = (code: string, lang: string) => {
     return h;
   };
 
+  const highlightCSharp = (c: string) => {
+    let h = c;
+
+    // Comments
+    h = h.replace(/(\/\/.*$)/gm, '<span class="prsm-comment">$1</span>');
+    h = h.replace(/\/\*[\s\S]*?\*\//g, '<span class="prsm-comment">$&</span>');
+
+    // Strings
+    h = h.replace(/("[^"\\]*(?:\\[\s\S][^"\\]*)*")/g, (match, _, offset) => {
+      if (isInsideSpan(h, offset)) return match;
+      return `<span class="prsm-string">${match}</span>`;
+    });
+
+    // Keywords
+    const csKeywords = /\b(abstract|as|base|bool|break|byte|case|catch|char|checked|class|const|continue|decimal|default|delegate|do|double|else|enum|event|explicit|extern|false|finally|fixed|float|for|foreach|goto|if|implicit|in|int|interface|internal|is|lock|long|namespace|new|null|object|operator|out|override|params|private|protected|public|readonly|ref|return|sbyte|sealed|short|sizeof|stackalloc|static|string|struct|switch|this|throw|true|try|typeof|uint|ulong|unchecked|unsafe|ushort|using|var|virtual|void|volatile|while|yield)\b/g;
+    h = h.replace(csKeywords, (match, _, offset) => {
+      if (isInsideSpan(h, offset)) return match;
+      return `<span class="prsm-keyword">${match}</span>`;
+    });
+
+    // Types (PascalCase)
+    h = h.replace(/\b([A-Z][a-zA-Z0-9_]*)\b/g, (match, _, offset) => {
+      if (isInsideSpan(h, offset)) return match;
+      return `<span class="prsm-type">${match}</span>`;
+    });
+
+    // Methods (followed by parenthesis)
+    h = h.replace(/\b([a-z][a-zA-Z0-9_]*)(?=\s*\()/g, (match, _, offset) => {
+      if (isInsideSpan(h, offset)) return match;
+      return `<span class="prsm-function">${match}</span>`;
+    });
+
+    // Properties (after dot)
+    h = h.replace(/\.([a-z][a-zA-Z0-9_]*)\b/g, (match, p1, offset) => {
+      if (isInsideSpan(h, offset)) return match;
+      return `.<span class="prsm-property">${p1}</span>`;
+    });
+
+    // Numbers
+    h = h.replace(/\b(\d+(\.\d+)?[fFdDmM]?)\b/g, (match, _, _2, offset) => {
+      if (isInsideSpan(h, offset)) return match;
+      return `<span class="prsm-number">${match}</span>`;
+    });
+
+    // Attributes [...]
+    h = h.replace(/(\[[A-Z][a-zA-Z0-9_]*(?:\([^)]*\))?\])/g, (match, _, offset) => {
+      if (isInsideSpan(h, offset)) return match;
+      return `<span class="prsm-annotation">${match}</span>`;
+    });
+
+    return h;
+  };
+
   if (l === 'json') {
     return code
       .replace(/"([^"]+)":/g, '<span class="code-key">"$1"</span>:')
@@ -170,6 +223,10 @@ const highlightCode = (code: string, lang: string) => {
 
   if (l === 'prsm' || l === 'prism' || l === 'javascript' || l === 'js' || l === 'text' || !l) {
     return highlightPrsm(code);
+  }
+
+  if (l === 'csharp' || l === 'cs' || l === 'c#') {
+    return highlightCSharp(code);
   }
 
   return code;
@@ -382,11 +439,11 @@ function SimpleMarkdown({ content }: { content: string }) {
     } else if (line.startsWith('# ')) {
       const text = line.slice(2);
       const id = text.toLowerCase().replace(/[^\w]+/g, '-');
-      elements.push(<h1 key={i} id={id}>{text}</h1>);
+      elements.push(<h1 key={i} id={id}>{renderInlineMarkdown(text)}</h1>);
     } else if (line.startsWith('## ')) {
       const text = line.slice(3);
       const id = text.toLowerCase().replace(/[^\w]+/g, '-');
-      elements.push(<h2 key={i} id={id}>{text}</h2>);
+      elements.push(<h2 key={i} id={id}>{renderInlineMarkdown(text)}</h2>);
     } else if (line.startsWith('### ')) {
       elements.push(<h3 key={i}>{renderInlineMarkdown(line.slice(4))}</h3>);
     } else if (line.trim()) {
