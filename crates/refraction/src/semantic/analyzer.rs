@@ -42,6 +42,8 @@ pub struct Analyzer {
     next_definition_id: u32,
     current_decl_name: Option<String>,
     current_member_name: Option<String>,
+    /// Whether the `input-system` language feature is enabled for this project.
+    input_system_enabled: bool,
 }
 
 impl Analyzer {
@@ -60,7 +62,13 @@ impl Analyzer {
             next_definition_id: 1,
             current_decl_name: None,
             current_member_name: None,
+            input_system_enabled: false,
         }
+    }
+
+    pub fn with_input_system_enabled(mut self, enabled: bool) -> Self {
+        self.input_system_enabled = enabled;
+        self
     }
 
     pub fn with_known_project_types(
@@ -1065,6 +1073,18 @@ impl Analyzer {
                 ..
             } => {
                 if let Some(recv) = receiver {
+                    // v2 feature gate: `input.action("X")` requires `input-system` feature.
+                    if name == "action" {
+                        if let Expr::Ident(id, _) = recv.as_ref() {
+                            if id == "input" && !self.input_system_enabled {
+                                self.diag.error(
+                                    "E070",
+                                    "New Input System sugar (`input.action(...)`) requires the `input-system` feature. Add `features = [\"input-system\"]` under `[language]` in your .prsmproject.",
+                                    *name_span,
+                                );
+                            }
+                        }
+                    }
                     let receiver_is_this = matches!(recv.as_ref(), Expr::This(_));
                     let receiver_ty = self.analyze_expr(recv);
                     if receiver_is_this {

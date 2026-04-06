@@ -113,6 +113,28 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                 cs_members.extend(cleanup_methods(&listen_ctx.records));
             }
 
+            // v2 New Input System sugar: if any method uses input.action(...), inject
+            // a `private PlayerInput _prsmInput;` field and `_prsmInput = GetComponent<PlayerInput>()`
+            // in Awake.
+            let uses_input_system = members.iter().any(member_uses_new_input);
+            if uses_input_system {
+                // Insert the PlayerInput backing field before the first method/property.
+                let field_pos = cs_members.iter().position(|m| matches!(m, CsMember::Method { .. } | CsMember::Property { .. })).unwrap_or(cs_members.len());
+                cs_members.insert(field_pos, CsMember::Field {
+                    attributes: vec![],
+                    modifiers: "private".into(),
+                    ty: "PlayerInput".into(),
+                    name: PRSM_INPUT_FIELD.into(),
+                    init: None,
+                });
+                // Inject `_prsmInput = GetComponent<PlayerInput>();` into Awake.
+                inject_or_synthesize(
+                    &mut cs_members,
+                    "Awake",
+                    &format!("{} = GetComponent<PlayerInput>();", PRSM_INPUT_FIELD),
+                );
+            }
+
             if needs_expr_helper(&cs_members) {
                 cs_members.push(lower_expr_helper_member());
             }
@@ -1514,8 +1536,12 @@ fn lower_expr(expr: &Expr) -> String {
             }
         }
         Expr::MemberAccess { receiver, name, .. } => {
+            // New Input System sugar: input.action("X").pressed → _prsmInput.actions["X"].WasPressedThisFrame()
+            if let Some(cs) = try_lower_new_input_member(receiver, name) {
+                return cs;
+            }
             let recv = lower_expr(receiver);
-            // Sugar mappings
+            // Legacy input + other sugar mappings
             match (recv.as_str(), name.as_str()) {
                 ("input", "axis") => "Input.GetAxis".into(),
                 ("input", "getKey") => "Input.GetKey".into(),
@@ -2034,6 +2060,183 @@ fn inject_cleanup_calls(cs_members: &mut Vec<CsMember>, records: &[SubscriptionR
     }
     if needs_cleanup_destroy(records) {
         inject_or_synthesize(cs_members, "OnDestroy", "__prsm_cleanup_destroy()");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// v2 New Input System sugar helpers
+// ---------------------------------------------------------------------------
+
+/// The hidden field name injected by the compiler.
+const PRSM_INPUT_FIELD: &str = "_prsmInput";
+
+/// If `expr` is `input.action("ActionName")` (i.e. a call on `input` named
+/// `action` with one string literal arg), return `Some(action_name)`.
+fn extract_input_action_name(expr: &Expr) -> Option<&str> {
+    if let Expr::Call { receiver: Some(recv), name, args, .. } = expr {
+        if name == "action" {
+            if let Expr::Ident(id, _) = recv.as_ref() {
+                if id == "input" {
+                    if let Some(arg) = args.first() {
+                        if let Expr::StringLit(s, _) = &arg.value {
+                            return Some(s.as_str());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Try to lower `receiver.property_name` as New Input System sugar.
+///
+/// Patterns handled:
+/// - `input.action("Name").pressed`   → `_prsmInput.actions["Name"].WasPressedThisFrame()`
+/// - `input.action("Name").released`  → `_prsmInput.actions["Name"].WasReleasedThisFrame()`
+/// - `input.action("Name").held`      → `_prsmInput.actions["Name"].IsPressed()`
+/// - `input.action("Name").vector2`   → `_prsmInput.actions["Name"].ReadValue<UnityEngine.Vector2>()`
+/// - `input.action("Name").scalar`    → `_prsmInput.actions["Name"].ReadValue<float>()`
+/// - `input.action("Name").value`     → same as `vector2` (generic alias)
+fn try_lower_new_input_member(receiver: &Expr, prop: &str) -> Option<String> {
+    let action_name = extract_input_action_name(receiver)?;
+    let cs = match prop {
+        "pressed" => format!(
+            "{}.actions[\"{}\"].WasPressedThisFrame()",
+            PRSM_INPUT_FIELD, action_name
+        ),
+        "released" => format!(
+            "{}.actions[\"{}\"].WasReleasedThisFrame()",
+            PRSM_INPUT_FIELD, action_name
+        ),
+        "held" => format!(
+            "{}.actions[\"{}\"].IsPressed()",
+            PRSM_INPUT_FIELD, action_name
+        ),
+        "vector2" | "value" => format!(
+            "{}.actions[\"{}\"].ReadValue<UnityEngine.Vector2>()",
+            PRSM_INPUT_FIELD, action_name
+        ),
+        "scalar" => format!(
+            "{}.actions[\"{}\"].ReadValue<float>()",
+            PRSM_INPUT_FIELD, action_name
+        ),
+        _ => return None,
+    };
+    Some(cs)
+}
+
+/// Scan an expression tree for any `input.action(...)` calls.
+fn expr_uses_new_input(expr: &Expr) -> bool {
+    match expr {
+        Expr::MemberAccess { receiver, .. } => {
+            // Direct: input.action("X").pressed
+            if extract_input_action_name(receiver).is_some() {
+                return true;
+            }
+            expr_uses_new_input(receiver)
+        }
+        Expr::Call { receiver, args, .. } => {
+            if let Some(r) = receiver {
+                if expr_uses_new_input(r) { return true; }
+            }
+            args.iter().any(|a| expr_uses_new_input(&a.value))
+        }
+        Expr::Binary { left, right, .. } => expr_uses_new_input(left) || expr_uses_new_input(right),
+        Expr::Unary { operand, .. } => expr_uses_new_input(operand),
+        Expr::NonNullAssert { expr, .. } => expr_uses_new_input(expr),
+        Expr::Elvis { left, right, .. } => expr_uses_new_input(left) || expr_uses_new_input(right),
+        Expr::IndexAccess { receiver, index, .. } => {
+            expr_uses_new_input(receiver) || expr_uses_new_input(index)
+        }
+        Expr::SafeMethodCall { receiver, args, .. } => {
+            if expr_uses_new_input(receiver) { return true; }
+            args.iter().any(|a| expr_uses_new_input(&a.value))
+        }
+        Expr::SafeCall { receiver, .. } => expr_uses_new_input(receiver),
+        Expr::IfExpr { cond, then_block, else_block, .. } => {
+            expr_uses_new_input(cond)
+                || then_block.stmts.iter().any(|s| stmt_uses_new_input(s))
+                || else_block.stmts.iter().any(|s| stmt_uses_new_input(s))
+        }
+        Expr::WhenExpr { subject, branches, .. } => {
+            subject.as_ref().map_or(false, |s| expr_uses_new_input(s))
+                || branches.iter().any(|b| match &b.body {
+                    WhenBody::Expr(e) => expr_uses_new_input(e),
+                    WhenBody::Block(bl) => bl.stmts.iter().any(|s| stmt_uses_new_input(s)),
+                })
+        }
+        Expr::Range { start, end, step, .. } => {
+            expr_uses_new_input(start)
+                || expr_uses_new_input(end)
+                || step.as_ref().map_or(false, |s| expr_uses_new_input(s))
+        }
+        Expr::StringInterp { parts, .. } => parts.iter().any(|p| {
+            if let StringPart::Expr(e) = p { expr_uses_new_input(e) } else { false }
+        }),
+        Expr::Is { expr, .. } => expr_uses_new_input(expr),
+        Expr::Lambda { body, .. } => body.stmts.iter().any(|s| stmt_uses_new_input(s)),
+        _ => false,
+    }
+}
+
+fn stmt_uses_new_input(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Expr { expr, .. } => expr_uses_new_input(expr),
+        Stmt::ValDecl { init, .. } => expr_uses_new_input(init),
+        Stmt::VarDecl { init, .. } => init.as_ref().map_or(false, |e| expr_uses_new_input(e)),
+        Stmt::Assignment { target, value, .. } => {
+            expr_uses_new_input(target) || expr_uses_new_input(value)
+        }
+        Stmt::Return { value, .. } => value.as_ref().map_or(false, |e| expr_uses_new_input(e)),
+        Stmt::If { cond, then_block, else_branch, .. } => {
+            if expr_uses_new_input(cond) { return true; }
+            if then_block.stmts.iter().any(|s| stmt_uses_new_input(s)) { return true; }
+            if let Some(eb) = else_branch {
+                return match eb {
+                    ElseBranch::ElseBlock(b) => b.stmts.iter().any(|s| stmt_uses_new_input(s)),
+                    ElseBranch::ElseIf(s) => stmt_uses_new_input(s),
+                };
+            }
+            false
+        }
+        Stmt::When { subject, branches, .. } => {
+            if subject.as_ref().map_or(false, |s| expr_uses_new_input(s)) { return true; }
+            branches.iter().any(|b| match &b.body {
+                WhenBody::Expr(e) => expr_uses_new_input(e),
+                WhenBody::Block(bl) => bl.stmts.iter().any(|s| stmt_uses_new_input(s)),
+            })
+        }
+        Stmt::For { iterable, body, .. } => {
+            expr_uses_new_input(iterable) || body.stmts.iter().any(|s| stmt_uses_new_input(s))
+        }
+        Stmt::While { cond, body, .. } => {
+            expr_uses_new_input(cond) || body.stmts.iter().any(|s| stmt_uses_new_input(s))
+        }
+        Stmt::Listen { event, body, .. } => {
+            expr_uses_new_input(event) || body.stmts.iter().any(|s| stmt_uses_new_input(s))
+        }
+        Stmt::Start { call, .. } => expr_uses_new_input(call),
+        Stmt::Stop { target, .. } => expr_uses_new_input(target),
+        Stmt::DestructureVal { init, .. } => expr_uses_new_input(init),
+        Stmt::Wait { form, .. } => match form {
+            WaitForm::Duration(e) | WaitForm::Until(e) | WaitForm::While(e) => expr_uses_new_input(e),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+fn member_uses_new_input(member: &Member) -> bool {
+    match member {
+        Member::Lifecycle { body, .. } | Member::Coroutine { body, .. } => {
+            body.stmts.iter().any(|s| stmt_uses_new_input(s))
+        }
+        Member::Func { body, .. } => match body {
+            FuncBody::Block(block) => block.stmts.iter().any(|s| stmt_uses_new_input(s)),
+            FuncBody::ExprBody(e) => expr_uses_new_input(e),
+        },
+        _ => false,
     }
 }
 

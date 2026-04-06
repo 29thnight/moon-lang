@@ -2826,4 +2826,153 @@ fn v2_val_destructure_binding() {
     let _ = fs::remove_dir_all(root);
 }
 
+// ── Item #7: v2 New Input System sugar ──────────────────────────────────────
+
+#[test]
+fn v2_new_input_system_action_pressed() {
+    // `input.action("Jump").pressed` with feature enabled → PlayerInput field + WasPressedThisFrame
+    let root = unique_temp_dir("prism_new_input_pressed_smoke");
+    write_file(
+        &root.join(".prsmproject"),
+        r#"[project]
+name = "InputTest"
+
+[language]
+version = "2.0"
+features = ["input-system"]
+
+[compiler]
+output_dir = "Generated/PrSM"
+
+[source]
+include = ["*.prsm"]
+exclude = []
+"#,
+    );
+    write_file(
+        &root.join("Player.prsm"),
+        r#"component Player : MonoBehaviour {
+    update {
+        if input.action("Jump").pressed {
+            jump()
+        }
+    }
+
+    func jump(): Unit {}
+}
+"#,
+    );
+
+    let output = Command::new(prism())
+        .args(["build", "--json"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "build failed:\n{}", String::from_utf8_lossy(&output.stderr));
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let json_start = stdout.find('{').expect("expected JSON");
+    let json: serde_json::Value = serde_json::from_str(&stdout[json_start..]).unwrap();
+    assert_eq!(json["errors"], 0, "expected 0 errors; got {}", json["errors"]);
+
+    let cs = fs::read_to_string(root.join("Generated").join("PrSM").join("Player.cs")).unwrap();
+    // PlayerInput backing field injected
+    assert!(cs.contains("PlayerInput _prsmInput"), "missing PlayerInput field:\n{cs}");
+    // GetComponent<PlayerInput> in Awake
+    assert!(cs.contains("GetComponent<PlayerInput>"), "missing GetComponent:\n{cs}");
+    // WasPressedThisFrame call lowered correctly
+    assert!(cs.contains("WasPressedThisFrame"), "missing WasPressedThisFrame:\n{cs}");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn v2_new_input_system_vector2() {
+    // `input.action("Move").vector2` → ReadValue<UnityEngine.Vector2>()
+    let root = unique_temp_dir("prism_new_input_vector2_smoke");
+    write_file(
+        &root.join(".prsmproject"),
+        r#"[project]
+name = "InputVec2Test"
+
+[language]
+version = "2.0"
+features = ["input-system"]
+
+[compiler]
+output_dir = "Generated/PrSM"
+
+[source]
+include = ["*.prsm"]
+exclude = []
+"#,
+    );
+    write_file(
+        &root.join("Mover.prsm"),
+        r#"component Mover : MonoBehaviour {
+    update {
+        val move = input.action("Move").vector2
+    }
+}
+"#,
+    );
+
+    let output = Command::new(prism())
+        .args(["build", "--json"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+
+    assert!(output.status.success(), "build failed:\n{}", String::from_utf8_lossy(&output.stderr));
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let json_start = stdout.find('{').expect("expected JSON");
+    let json: serde_json::Value = serde_json::from_str(&stdout[json_start..]).unwrap();
+    assert_eq!(json["errors"], 0, "expected 0 errors; got {}", json["errors"]);
+
+    let cs = fs::read_to_string(root.join("Generated").join("PrSM").join("Mover.cs")).unwrap();
+    assert!(cs.contains("ReadValue<UnityEngine.Vector2>"), "missing ReadValue<Vector2>:\n{cs}");
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn v2_new_input_system_feature_gate_error() {
+    // `input.action(...)` without feature → compile error E070
+    let root = unique_temp_dir("prism_new_input_gate_smoke");
+    write_file(
+        &root.join("Gate.prsm"),
+        r#"component Gate : MonoBehaviour {
+    update {
+        if input.action("Fire").pressed {
+            fire()
+        }
+    }
+    func fire(): Unit {}
+}
+"#,
+    );
+
+    let output = Command::new(prism())
+        .args(["compile", root.join("Gate.prsm").to_str().unwrap(), "--json"])
+        .output()
+        .unwrap();
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    // Must produce error E070
+    assert!(
+        json["errors"].as_u64().unwrap_or(0) > 0,
+        "expected E070 error for missing input-system feature; got:\n{stdout}"
+    );
+    let diagnostics = json["diagnostics"].as_array().unwrap();
+    assert!(
+        diagnostics.iter().any(|d| d["code"].as_str() == Some("E070")),
+        "expected E070 in diagnostics:\n{:?}", diagnostics
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
+
 

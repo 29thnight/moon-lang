@@ -98,7 +98,15 @@ pub fn to_json_diagnostic(diagnostic: &Diagnostic, file_path: &str) -> JsonDiagn
 }
 
 pub fn compile_file(source_path: &Path, output_dir: Option<&Path>) -> FileResult {
-    let mut result = analyze_file(source_path);
+    compile_file_with_features(source_path, output_dir, false)
+}
+
+fn compile_file_with_features(
+    source_path: &Path,
+    output_dir: Option<&Path>,
+    input_system_enabled: bool,
+) -> FileResult {
+    let mut result = analyze_file_with_features(source_path, input_system_enabled);
     if result.has_errors {
         return result;
     }
@@ -119,7 +127,7 @@ pub fn compile_file(source_path: &Path, output_dir: Option<&Path>) -> FileResult
         }
     };
 
-    let mut analyzer = Analyzer::new();
+    let mut analyzer = Analyzer::new().with_input_system_enabled(input_system_enabled);
     let hir_file = analyzer.analyze_file_with_hir(&file, source_path);
 
     let ir = lower_file(&file);
@@ -163,7 +171,20 @@ pub fn check_file(source_path: &Path) -> FileResult {
 }
 
 pub fn compile_paths(files: &[PathBuf], output_dir: Option<&Path>) -> DriverReport {
-    summarize(files.iter().map(|file| compile_file(file, output_dir)).collect())
+    compile_paths_with_features(files, output_dir, false)
+}
+
+fn compile_paths_with_features(
+    files: &[PathBuf],
+    output_dir: Option<&Path>,
+    input_system_enabled: bool,
+) -> DriverReport {
+    summarize(
+        files
+            .iter()
+            .map(|file| compile_file_with_features(file, output_dir, input_system_enabled))
+            .collect(),
+    )
 }
 
 pub fn check_paths(files: &[PathBuf]) -> DriverReport {
@@ -186,7 +207,8 @@ pub fn build_project(start_dir: &Path) -> Result<ProjectBuildReport, String> {
     fs::create_dir_all(&graph.cache_dir)
         .map_err(|error| format!("Cannot create cache directory {}: {}", graph.cache_dir.display(), error))?;
 
-    let report = compile_paths(&graph.source_files, Some(graph.output_dir.as_path()));
+    let input_system_enabled = graph.enabled_features.contains(&crate::project_graph::LanguageFeature::InputSystem);
+    let report = compile_paths_with_features(&graph.source_files, Some(graph.output_dir.as_path()), input_system_enabled);
 
     Ok(ProjectBuildReport {
         project_name: graph.config.project.name.clone(),
@@ -321,6 +343,10 @@ fn collect_prsm_files_recursive(dir: &Path) -> Vec<PathBuf> {
 }
 
 fn analyze_file(source_path: &Path) -> FileResult {
+    analyze_file_with_features(source_path, false)
+}
+
+fn analyze_file_with_features(source_path: &Path, input_system_enabled: bool) -> FileResult {
     let mut result = FileResult {
         source_path: source_path.to_path_buf(),
         output_path: None,
@@ -357,7 +383,7 @@ fn analyze_file(source_path: &Path) -> FileResult {
         return result;
     }
 
-    let mut analyzer = Analyzer::new();
+    let mut analyzer = Analyzer::new().with_input_system_enabled(input_system_enabled);
     analyzer.analyze_file(&file);
     for diagnostic in &analyzer.diag.diagnostics {
         let is_error = diagnostic.severity == Severity::Error;
