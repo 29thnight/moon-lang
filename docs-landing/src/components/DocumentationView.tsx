@@ -33,6 +33,8 @@ const DOC_GROUPS_EN: DocGroup[] = [
       { id: 'control-flow', title: 'Control Flow', path: 'docs/en/pattern-matching-and-control-flow.md' },
       { id: 'coroutines', title: 'Coroutines', path: 'docs/en/coroutines.md' },
       { id: 'strings', title: 'Strings & Collections', path: 'docs/en/strings-and-collections.md' },
+      { id: 'input-system', title: 'Input System', path: 'docs/en/input-system.md' },
+      { id: 'generic-inference', title: 'Generic Inference', path: 'docs/en/generic-inference.md' },
     ]
   },
   {
@@ -52,7 +54,28 @@ const DOC_GROUPS_EN: DocGroup[] = [
       { id: 'cli', title: 'CLI', path: 'docs/en/cli.md' },
       { id: 'unity', title: 'Unity Integration', path: 'docs/en/unity-integration.md' },
       { id: 'vscode', title: 'VS Code Extension', path: 'docs/en/vscode-extension.md' },
-      { id: 'config', title: 'Project Configuration', path: 'docs/en/project-configuration-and-interop.md' },
+      { id: 'tooling-overview', title: 'Tooling Overview', path: 'docs/en/tooling.md' },
+      { id: 'config', title: 'Project Configuration', path: 'docs/en/project-configuration.md' },
+      { id: 'generated-cs', title: 'Generated C# & Source Maps', path: 'docs/en/generated-csharp-and-source-maps.md' },
+      { id: 'source-maps', title: 'Source Maps', path: 'docs/en/source-maps.md' },
+    ]
+  },
+  {
+    id: 'reference',
+    title: 'Reference',
+    items: [
+      { id: 'grammar', title: 'Formal Grammar', path: 'docs/en/grammar.md' },
+      { id: 'error-catalog', title: 'Error Catalog', path: 'docs/en/error-catalog.md' },
+      { id: 'idioms', title: 'Idioms & Patterns', path: 'docs/en/idioms.md' },
+      { id: 'migration', title: 'v1 → v2 Migration', path: 'docs/en/migration-v1-to-v2.md' },
+    ]
+  },
+  {
+    id: 'spec',
+    title: 'Specification',
+    items: [
+      { id: 'standard', title: 'Language Standard', path: 'docs/en/spec/standard.md' },
+      { id: 'changes-lang-2', title: 'Language 1 → 2 Changes', path: 'docs/en/spec/changes-lang-2.md' },
     ]
   },
   {
@@ -61,7 +84,6 @@ const DOC_GROUPS_EN: DocGroup[] = [
     items: [
       { id: 'architecture', title: 'Architecture', path: 'docs/en/architecture.md' },
       { id: 'internals', title: 'Internals', path: 'docs/en/internals.md' },
-      { id: 'mini-spec', title: 'Mini Spec', path: 'docs/en/mini-spec.md' },
       { id: 'future', title: 'Future Direction', path: 'docs/en/future-direction.md' },
     ]
   }
@@ -88,6 +110,8 @@ const DOC_GROUPS_KO: DocGroup[] = [
       { id: 'control-flow', title: '제어 흐름', path: 'docs/ko/pattern-matching-and-control-flow.md' },
       { id: 'coroutines', title: '코루틴', path: 'docs/ko/coroutines.md' },
       { id: 'strings', title: '문자열 및 컬렉션', path: 'docs/ko/strings-and-collections.md' },
+      { id: 'input-system', title: 'Input System', path: 'docs/ko/input-system.md' },
+      { id: 'generic-inference', title: '제네릭 추론', path: 'docs/ko/generic-inference.md' },
     ]
   },
   {
@@ -96,7 +120,7 @@ const DOC_GROUPS_KO: DocGroup[] = [
     items: [
       { id: 'data-models', title: '데이터 모델', path: 'docs/ko/data-models.md' },
       { id: 'lifecycle', title: '라이프사이클', path: 'docs/ko/lifecycle.md' },
-      { id: 'events', title: '이벤트 및 본질 기능', path: 'docs/ko/events-and-intrinsic.md' },
+      { id: 'events', title: '이벤트 및 Intrinsic', path: 'docs/ko/events-and-intrinsic.md' },
       { id: 'declarations', title: '선언 및 필드', path: 'docs/ko/declarations-and-fields.md' },
     ]
   },
@@ -107,7 +131,28 @@ const DOC_GROUPS_KO: DocGroup[] = [
       { id: 'cli', title: 'CLI', path: 'docs/ko/cli.md' },
       { id: 'unity', title: 'Unity 통합', path: 'docs/ko/unity-integration.md' },
       { id: 'vscode', title: 'VS Code 확장', path: 'docs/ko/vscode-extension.md' },
-      { id: 'config', title: '프로젝트 구성', path: 'docs/ko/project-configuration-and-interop.md' },
+      { id: 'tooling-overview', title: '도구 개요', path: 'docs/ko/tooling.md' },
+      { id: 'config', title: '프로젝트 설정', path: 'docs/ko/project-configuration.md' },
+      { id: 'generated-cs', title: 'Generated C# & Source Maps', path: 'docs/ko/generated-csharp-and-source-maps.md' },
+      { id: 'source-maps', title: '소스맵', path: 'docs/ko/source-maps.md' },
+    ]
+  },
+  {
+    id: 'reference',
+    title: '레퍼런스',
+    items: [
+      { id: 'grammar', title: '형식 문법', path: 'docs/ko/grammar.md' },
+      { id: 'error-catalog', title: '오류 카탈로그', path: 'docs/ko/error-catalog.md' },
+      { id: 'idioms', title: '관용구 및 패턴', path: 'docs/ko/idioms.md' },
+      { id: 'migration', title: 'v1 → v2 마이그레이션', path: 'docs/ko/migration-v1-to-v2.md' },
+    ]
+  },
+  {
+    id: 'spec',
+    title: '언어 사양',
+    items: [
+      { id: 'standard', title: '언어 표준', path: 'docs/ko/spec/standard.md' },
+      { id: 'changes-lang-2', title: '언어 1 → 2 변경사항', path: 'docs/ko/spec/changes-lang-2.md' },
     ]
   },
   {
@@ -116,7 +161,6 @@ const DOC_GROUPS_KO: DocGroup[] = [
     items: [
       { id: 'architecture', title: '아키텍처', path: 'docs/ko/architecture.md' },
       { id: 'internals', title: '내부 구조', path: 'docs/ko/internals.md' },
-      { id: 'mini-spec', title: '상세 명세', path: 'docs/ko/mini-spec.md' },
       { id: 'future', title: '향후 방향', path: 'docs/ko/future-direction.md' },
     ]
   }
