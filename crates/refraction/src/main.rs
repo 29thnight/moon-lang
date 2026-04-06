@@ -290,6 +290,7 @@ fn main() {
                     "project": build.project_name,
                     "files": build.report.files,
                     "compiled": build.report.compiled,
+                    "cached": build.report.cached,
                     "errors": build.report.errors,
                     "warnings": build.report.warnings,
                     "language_version": build.language_version,
@@ -328,10 +329,19 @@ fn main() {
                         build.report.errors, build.report.warnings, build.report.files
                     );
                 } else {
-                    println!(
-                        "Build succeeded: {} file(s) -> {}",
-                        build.report.compiled, build.output_dir_display
-                    );
+                    if build.report.cached > 0 {
+                        println!(
+                            "Build succeeded: {} compiled, {} cached -> {}",
+                            build.report.compiled,
+                            build.report.cached,
+                            build.output_dir_display
+                        );
+                    } else {
+                        println!(
+                            "Build succeeded: {} file(s) -> {}",
+                            build.report.compiled, build.output_dir_display
+                        );
+                    }
                 }
             }
 
@@ -818,15 +828,17 @@ fn print_compiled_outputs(report: &driver::DriverReport) {
         if let Some(output_path) = &file_result.output_path {
             match &file_result.source_map_path {
                 Some(source_map_path) => println!(
-                    "  {} -> {} [{}]",
+                    "  {} -> {} [{}]{}",
                     file_result.source_path.display(),
                     output_path.display(),
-                    source_map_path.display()
+                    source_map_path.display(),
+                    if file_result.was_cached { " [cached]" } else { "" }
                 ),
                 None => println!(
-                    "  {} -> {}",
+                    "  {} -> {}{}",
                     file_result.source_path.display(),
-                    output_path.display()
+                    output_path.display(),
+                    if file_result.was_cached { " [cached]" } else { "" }
                 ),
             }
         }
@@ -842,6 +854,7 @@ fn compiled_outputs_to_json(file_results: &[driver::FileResult]) -> Vec<serde_js
                     "source": file_result.source_path,
                     "generated": output_path,
                     "source_map": file_result.source_map_path,
+                    "cached": file_result.was_cached,
                 })
             })
         })

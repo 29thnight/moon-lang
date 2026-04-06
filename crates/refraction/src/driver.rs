@@ -11,7 +11,7 @@ use crate::project_graph::ProjectGraph;
 use crate::project_index::{build_project_index, DeclarationKind, ProjectIndex, ProjectIndexStats};
 use crate::semantic::analyzer::Analyzer;
 use crate::source_map;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,12 +35,14 @@ pub struct FileResult {
     pub source_map_path: Option<PathBuf>,
     pub diagnostics: Vec<Diagnostic>,
     pub has_errors: bool,
+    pub was_cached: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct DriverReport {
     pub files: usize,
     pub compiled: usize,
+    pub cached: usize,
     pub errors: u32,
     pub warnings: u32,
     pub diagnostics: Vec<JsonDiagnostic>,
@@ -63,6 +65,19 @@ pub struct ProjectBuildReport {
     pub project_index: ProjectIndex,
     pub index_stats: ProjectIndexStats,
     pub report: DriverReport,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct BuildCacheManifest {
+    version: u32,
+    files: HashMap<String, BuildCacheEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct BuildCacheEntry {
+    source_hash: String,
+    output_path: PathBuf,
+    source_map_path: PathBuf,
 }
 
 pub fn format_diagnostic(diagnostic: &Diagnostic, file_path: &str) -> String {
@@ -208,7 +223,7 @@ pub fn build_project(start_dir: &Path) -> Result<ProjectBuildReport, String> {
         .map_err(|error| format!("Cannot create cache directory {}: {}", graph.cache_dir.display(), error))?;
 
     let input_system_enabled = graph.enabled_features.contains(&crate::project_graph::LanguageFeature::InputSystem);
-    let report = compile_paths_with_features(&graph.source_files, Some(graph.output_dir.as_path()), input_system_enabled);
+    let report = build_project_incremental(&graph.source_files, &graph.output_dir, &graph.cache_dir, input_system_enabled)?;
 
     Ok(ProjectBuildReport {
         project_name: graph.config.project.name.clone(),
@@ -353,6 +368,7 @@ fn analyze_file_with_features(source_path: &Path, input_system_enabled: bool) ->
         source_map_path: None,
         diagnostics: Vec::new(),
         has_errors: false,
+        was_cached: false,
     };
 
     let source = match fs::read_to_string(source_path) {
@@ -398,6 +414,7 @@ fn analyze_file_with_features(source_path: &Path, input_system_enabled: bool) ->
 
 fn summarize(file_results: Vec<FileResult>) -> DriverReport {
     let mut compiled = 0usize;
+    let mut cached = 0usize;
     let mut errors = 0u32;
     let mut warnings = 0u32;
     let mut diagnostics = Vec::new();
@@ -405,7 +422,11 @@ fn summarize(file_results: Vec<FileResult>) -> DriverReport {
     for file_result in &file_results {
         let file_path = file_result.source_path.to_string_lossy().to_string();
         if file_result.output_path.is_some() {
-            compiled += 1;
+            if file_result.was_cached {
+                cached += 1;
+            } else {
+                compiled += 1;
+            }
         }
 
         for diagnostic in &file_result.diagnostics {
@@ -420,11 +441,138 @@ fn summarize(file_results: Vec<FileResult>) -> DriverReport {
     DriverReport {
         files: file_results.len(),
         compiled,
+        cached,
         errors,
         warnings,
         diagnostics,
         file_results,
     }
+}
+
+fn build_project_incremental(
+    files: &[PathBuf],
+    output_dir: &Path,
+    cache_dir: &Path,
+    input_system_enabled: bool,
+) -> Result<DriverReport, String> {
+    let previous_manifest = load_build_cache_manifest(cache_dir);
+    let mut next_manifest = BuildCacheManifest {
+        version: 1,
+        files: HashMap::new(),
+    };
+    let mut results = Vec::new();
+
+    for file in files {
+        let cache_key = file.to_string_lossy().to_string();
+        let source_hash = match compute_source_hash(file) {
+            Ok(hash) => hash,
+            Err(message) => {
+                results.push(FileResult {
+                    source_path: file.clone(),
+                    output_path: None,
+                    source_map_path: None,
+                    diagnostics: vec![io_error(message)],
+                    has_errors: true,
+                    was_cached: false,
+                });
+                continue;
+            }
+        };
+
+        let output_path = output_path_for_source(file, Some(output_dir));
+        let source_map_path = source_map::source_map_path_for_generated(&output_path);
+
+        let cache_hit = previous_manifest
+            .files
+            .get(&cache_key)
+            .map(|entry| {
+                entry.source_hash == source_hash
+                    && output_path.exists()
+                    && source_map_path.exists()
+            })
+            .unwrap_or(false);
+
+        if cache_hit {
+            results.push(FileResult {
+                source_path: file.clone(),
+                output_path: Some(output_path.clone()),
+                source_map_path: Some(source_map_path.clone()),
+                diagnostics: Vec::new(),
+                has_errors: false,
+                was_cached: true,
+            });
+            next_manifest.files.insert(
+                cache_key,
+                BuildCacheEntry {
+                    source_hash,
+                    output_path,
+                    source_map_path,
+                },
+            );
+            continue;
+        }
+
+        let result = compile_file_with_features(file, Some(output_dir), input_system_enabled);
+        if !result.has_errors {
+            if let (Some(out), Some(map)) = (&result.output_path, &result.source_map_path) {
+                next_manifest.files.insert(
+                    cache_key,
+                    BuildCacheEntry {
+                        source_hash,
+                        output_path: out.clone(),
+                        source_map_path: map.clone(),
+                    },
+                );
+            }
+        }
+        results.push(result);
+    }
+
+    save_build_cache_manifest(cache_dir, &next_manifest)?;
+    Ok(summarize(results))
+}
+
+fn output_path_for_source(source_path: &Path, output_dir: Option<&Path>) -> PathBuf {
+    if let Some(out_dir) = output_dir {
+        let file_name = source_path.file_stem().unwrap().to_string_lossy();
+        out_dir.join(format!("{}.cs", file_name))
+    } else {
+        source_path.with_extension("cs")
+    }
+}
+
+fn build_cache_manifest_path(cache_dir: &Path) -> PathBuf {
+    cache_dir.join("build-manifest.json")
+}
+
+fn load_build_cache_manifest(cache_dir: &Path) -> BuildCacheManifest {
+    let path = build_cache_manifest_path(cache_dir);
+    let Ok(contents) = fs::read_to_string(&path) else {
+        return BuildCacheManifest::default();
+    };
+
+    serde_json::from_str(&contents).unwrap_or_default()
+}
+
+fn save_build_cache_manifest(cache_dir: &Path, manifest: &BuildCacheManifest) -> Result<(), String> {
+    let path = build_cache_manifest_path(cache_dir);
+    let json = serde_json::to_string_pretty(manifest)
+        .map_err(|error| format!("Cannot serialize build cache {}: {}", path.display(), error))?;
+    fs::write(&path, json)
+        .map_err(|error| format!("Cannot write build cache {}: {}", path.display(), error))
+}
+
+fn compute_source_hash(source_path: &Path) -> Result<String, String> {
+    let bytes = fs::read(source_path)
+        .map_err(|error| format!("Cannot read file {}: {}", source_path.display(), error))?;
+
+    // Stable FNV-1a 64-bit hash for cache invalidation.
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in bytes {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    Ok(format!("{:016x}", hash))
 }
 
 fn io_error(message: String) -> Diagnostic {

@@ -269,6 +269,99 @@ component UiController : MonoBehaviour {
 }
 
 #[test]
+fn build_project_incremental_cache_skips_unchanged_files() {
+    let root = unique_temp_dir("prism_build_incremental_cache_smoke");
+    write_file(
+        &root.join(".prsmproject"),
+        r#"[project]
+name = "IncrementalProject"
+
+[compiler]
+output_dir = "Generated/PrSM"
+
+[source]
+include = ["Assets/**/*.prsm"]
+exclude = []
+"#,
+    );
+    write_file(
+        &root.join("Assets").join("Player.prsm"),
+        r#"component Player : MonoBehaviour {
+    func ping(): Unit {}
+}
+"#,
+    );
+    write_file(
+        &root.join("Assets").join("Enemy.prsm"),
+        r#"component Enemy : MonoBehaviour {
+    func pong(): Unit {}
+}
+"#,
+    );
+
+    let first = Command::new(prism())
+        .args(["build", "--json"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
+
+    let first_stdout = String::from_utf8(first.stdout).unwrap();
+    let first_json_start = first_stdout.find('{').expect("expected JSON output");
+    let first_json: serde_json::Value = serde_json::from_str(&first_stdout[first_json_start..]).unwrap();
+    assert_eq!(first_json["files"], 2);
+    assert_eq!(first_json["compiled"], 2);
+    assert_eq!(first_json["cached"], 0);
+    assert!(root.join(".prsm").join("cache").join("build-manifest.json").exists());
+
+    let second = Command::new(prism())
+        .args(["build", "--json"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert!(second.status.success(), "{}", String::from_utf8_lossy(&second.stderr));
+
+    let second_stdout = String::from_utf8(second.stdout).unwrap();
+    let second_json_start = second_stdout.find('{').expect("expected JSON output");
+    let second_json: serde_json::Value = serde_json::from_str(&second_stdout[second_json_start..]).unwrap();
+    assert_eq!(second_json["compiled"], 0);
+    assert_eq!(second_json["cached"], 2);
+    assert!(
+        second_json["outputs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["cached"] == serde_json::Value::Bool(true)),
+        "expected all outputs to be cached on second build: {second_stdout}"
+    );
+
+    write_file(
+        &root.join("Assets").join("Enemy.prsm"),
+        r#"component Enemy : MonoBehaviour {
+    func pong(): Unit {
+        log("changed")
+    }
+}
+"#,
+    );
+
+    let third = Command::new(prism())
+        .args(["build", "--json"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+    assert!(third.status.success(), "{}", String::from_utf8_lossy(&third.stderr));
+
+    let third_stdout = String::from_utf8(third.stdout).unwrap();
+    let third_json_start = third_stdout.find('{').expect("expected JSON output");
+    let third_json: serde_json::Value = serde_json::from_str(&third_stdout[third_json_start..]).unwrap();
+    assert_eq!(third_json["compiled"], 1);
+    assert_eq!(third_json["cached"], 1);
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn compile_source_map_sidecar_contains_member_anchors() {
     let root = unique_temp_dir("prism_source_map_sidecar_smoke");
     let source = root.join("Player.prsm");
