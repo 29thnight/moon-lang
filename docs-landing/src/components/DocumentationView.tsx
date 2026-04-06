@@ -389,6 +389,7 @@ export default function DocumentationView({ initialDocId = 'index', lang }: Docu
   }, [content])
 
   useEffect(() => {
+    if (!activeDoc) return
     const fetchDoc = async () => {
       setLoading(true)
       try {
@@ -404,7 +405,18 @@ export default function DocumentationView({ initialDocId = 'index', lang }: Docu
       }
     }
     fetchDoc()
-  }, [activeDocId, activeDoc.path])
+  }, [activeDocId, activeDoc])
+
+  if (groups.length === 0) {
+    return (
+      <div className="brand-docs">
+        <div className="brand-docs__loading">
+          <div className="brand-docs__spinner" />
+          <span>Loading navigation...</span>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="brand-docs">
