@@ -1531,8 +1531,25 @@ impl Analyzer {
                     );
                 }
                 // E144: silently skip if either side is Error to avoid cascades.
+                //
+                // Issue #22: also skip when the target type analyzes as
+                // a bare `External(member_name)`. PrSM does not have a
+                // Unity type registry, so `Expr::MemberAccess` lowers
+                // to `External(name)` where `name` is the member name
+                // itself (`text`, `value`, ...) rather than the actual
+                // member type. The previous strict check produced a
+                // confusing E144 ("source is String but target is text")
+                // for the canonical `bind playerName to nameLabel.text`
+                // pattern. Trust the user's bind site when the target
+                // type is unknown — the C# compiler will surface a real
+                // type mismatch downstream if the binding is wrong.
+                let target_is_unknown_member = matches!(
+                    (&target, &target_ty),
+                    (Expr::MemberAccess { .. }, PrismType::External(_))
+                );
                 if !matches!(source_ty, PrismType::Error)
                     && !matches!(target_ty, PrismType::Error)
+                    && !target_is_unknown_member
                     && !source_ty.is_assignable_to(&target_ty)
                     && !target_ty.is_assignable_to(&source_ty)
                 {

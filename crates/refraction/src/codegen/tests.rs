@@ -1528,6 +1528,21 @@ hello world
         );
     }
 
+    // Issue #22: `bind X to widget.text` (the canonical lang-4 MVVM
+    // pattern) compiles without a false-positive E144 type mismatch.
+    // The previous semantic check rejected the case because it treated
+    // the `text` member name as a type literal.
+    #[test]
+    fn test_bind_to_member_access_no_false_positive_e144() {
+        let src = "component PlayerHUD : MonoBehaviour {\n  bind playerName: String = \"Hero\"\n  serialize nameLabel: TextMeshProUGUI\n  awake {\n    bind playerName to nameLabel.text\n  }\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("public class PlayerHUD"),
+            "expected PlayerHUD component to lower: {}",
+            output
+        );
+    }
+
     // Issue #21: a map literal assigned to a `Map<String, Int>`-typed
     // variable passes the type check, even though the analyzer reports
     // the literal as `External("map")` instead of a full generic type.
