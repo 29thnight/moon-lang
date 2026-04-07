@@ -3227,15 +3227,15 @@ fn lower_expr_with_expected_type(
             format!("{}?[{}]", recv, idx)
         }
         // Language 5, Sprint 6: `throw expr` in expression position.
-        // C# throw expressions support exactly the same syntax form.
+        // C# throw expressions require a `new`-prefixed construction
+        // (`throw new Exception(...)`) — a bare call (`throw Exception(...)`)
+        // is invalid C#. PrSM `throw` always denotes a fresh exception
+        // construction (consistent with `Stmt::Throw` lowering at line
+        // 2487 above), so we prepend `new` unconditionally to mirror that
+        // contract.
         Expr::ThrowExpr { exception, .. } => {
             let exc = lower_expr_with_expected_type(exception, None, callable_signatures);
-            // C# throw expressions require `new`-prefix for exception
-            // construction; if the user wrote `throw Exception("...")`
-            // (a Call) we'd want to emit `throw new Exception(...)`. The
-            // call lowering already produces the construction form when
-            // the name resolves to a known type, so we forward verbatim.
-            format!("throw {}", exc)
+            format!("throw new {}", exc)
         }
         // v5 (deferred): `receiver with { field = value, ... }` lowers to
         // a C# `with`-expression. C# 9 records support this directly;

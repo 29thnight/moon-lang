@@ -1536,13 +1536,23 @@ hello world
     // `throw expr` in expression position composes with the `?:` elvis
     // operator. PrSM uses Kotlin-style `?:` for null-coalescing rather
     // than C# `??`; the lowered C# uses the corresponding `??` form.
+    //
+    // The lowered C# must include the `new` keyword on the constructed
+    // exception — a bare `throw Exception(...)` is invalid C# (CS1525).
+    // This mirrors the `Stmt::Throw` lowering, which also prepends `new`.
     #[test]
     fn test_throw_expression_in_elvis() {
         let src = "component Probe : MonoBehaviour {\n  func go(body: GameObject?) {\n    val rb = body ?: throw Exception(\"missing\")\n  }\n}";
         let output = compile(src);
         assert!(
-            output.contains("throw"),
-            "expected throw expression in lowered output: {}",
+            output.contains("throw new Exception(\"missing\")"),
+            "expected `throw new Exception(\"missing\")` in lowered output: {}",
+            output
+        );
+        // Guard against the regression where `new` was missing entirely.
+        assert!(
+            !output.contains("throw Exception("),
+            "lowered output contains bare `throw Exception(` without `new` (invalid C#): {}",
             output
         );
     }
