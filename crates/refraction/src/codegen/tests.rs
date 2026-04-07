@@ -1528,6 +1528,19 @@ hello world
         );
     }
 
+    // Issue #31: a safe cast `as Type?` preserves the nullable suffix
+    // in the lowered C# output, opting into nullable reference types.
+    #[test]
+    fn test_safe_cast_preserves_nullable_suffix() {
+        let src = "component Probe : MonoBehaviour {\n  func handle(c: Collider) {\n    val box = c as BoxCollider?\n  }\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("c as BoxCollider?"),
+            "expected nullable suffix preserved in `as` cast: {}",
+            output
+        );
+    }
+
     // Issue #30: PrSM `e.message` member access on a System.Exception
     // lowers to PascalCase `e.Message`. Other Exception members
     // (`stackTrace`, `innerException`, `helpLink`, `targetSite`) get

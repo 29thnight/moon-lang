@@ -3216,10 +3216,16 @@ fn lower_expr_with_expected_type(
         }
         Expr::IntrinsicExpr { code, .. } => code.clone(),
         Expr::SafeCastExpr { expr, target_type, .. } => {
+            // Issue #31: preserve the nullable suffix from PrSM
+            // `as Type?` so the lowered C# explicitly opts into the
+            // C# 8+ nullable reference types annotation. C# `as`
+            // returns null for reference type mismatches regardless,
+            // so dropping the `?` was previously safe but lost intent
+            // and broke the lang-4 spec output text.
             format!(
                 "{} as {}",
                 lower_expr_with_expected_type(expr, None, callable_signatures),
-                lower_type(target_type).trim_end_matches('?'),
+                lower_type(target_type),
             )
         }
         Expr::ForceCastExpr { expr, target_type, .. } => {
