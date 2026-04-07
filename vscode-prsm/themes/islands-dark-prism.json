@@ -151,6 +151,16 @@
       "name": "Nullable operator",
       "scope": ["keyword.operator.nullable"],
       "settings": { "foreground": "#bcbec4" }
+    },
+    {
+      "name": "Preprocessor directive (v5: #if / #elif / #else / #endif)",
+      "scope": ["keyword.control.directive", "keyword.control.directive.prsm"],
+      "settings": { "foreground": "#cf8e6d" }
+    },
+    {
+      "name": "Preprocessor symbol (v5: editor / ios / il2cpp / DEBUG / ...)",
+      "scope": ["constant.other.preprocessor", "constant.other.preprocessor.prsm"],
+      "settings": { "foreground": "#16baac" }
     }
   ]
 }

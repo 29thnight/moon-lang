@@ -6,6 +6,7 @@
   "patterns": [
     { "include": "#comments" },
     { "include": "#strings" },
+    { "include": "#preprocessor-directive" },
     { "include": "#annotations" },
     { "include": "#declaration-header" },
     { "include": "#function-declaration" },
@@ -48,6 +49,7 @@
 
     "annotations": {
       "patterns": [{
+        "comment": "Includes v5 attribute targets: @field(...), @property(...), @return(...), @type(...), @param(...), and @burst",
         "match": "(@)([a-zA-Z_][a-zA-Z0-9_]*)",
         "captures": {
           "1": { "name": "punctuation.definition.annotation.prsm" },
@@ -56,8 +58,37 @@
       }]
     },
 
+    "preprocessor-directive": {
+      "comment": "v5 Sprint 1: #if/#elif/#else/#endif preprocessor blocks. The directive name plus its boolean condition (curated PrSM symbol or arbitrary identifier) is captured so the theme can give it a distinct color.",
+      "patterns": [
+        {
+          "match": "^\\s*(#if|#elif)\\s+(.*)$",
+          "captures": {
+            "1": { "name": "keyword.control.directive.prsm" },
+            "2": { "name": "constant.other.preprocessor.prsm" }
+          }
+        },
+        {
+          "match": "^\\s*(#else|#endif)\\b",
+          "captures": {
+            "1": { "name": "keyword.control.directive.prsm" }
+          }
+        }
+      ]
+    },
+
     "declaration-header": {
       "patterns": [
+        {
+          "comment": "v5: `partial component Name : Base`",
+          "match": "\\b(partial)\\s+(component|asset)\\s+([A-Z][a-zA-Z0-9_]*)\\s*:\\s*([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "keyword.other.prsm" },
+            "3": { "name": "entity.name.type.class.prsm" },
+            "4": { "name": "support.class.prsm" }
+          }
+        },
         {
           "match": "\\b(component|asset)\\s+([A-Z][a-zA-Z0-9_]*)\\s*:\\s*([A-Z][a-zA-Z0-9_]*)",
           "captures": {
@@ -75,6 +106,15 @@
           }
         },
         {
+          "comment": "v4: `abstract class`, `sealed class`, `open class`, v5: `partial class`",
+          "match": "\\b(abstract|sealed|open|partial)\\s+(class)\\s+([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "keyword.other.prsm" },
+            "3": { "name": "entity.name.type.class.prsm" }
+          }
+        },
+        {
           "match": "\\b(class)\\s+([A-Z][a-zA-Z0-9_]*)",
           "captures": {
             "1": { "name": "keyword.other.prsm" },
@@ -87,28 +127,151 @@
             "1": { "name": "keyword.other.prsm" },
             "2": { "name": "entity.name.type.prsm" }
           }
+        },
+        {
+          "comment": "v4: `interface Name`",
+          "match": "\\b(interface)\\s+([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "entity.name.type.prsm" }
+          }
+        },
+        {
+          "comment": "v5: `ref struct Name(...)` and v4: `struct Name(...)`",
+          "match": "\\b(ref)?\\s*(struct)\\s+([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "keyword.other.prsm" },
+            "3": { "name": "entity.name.type.prsm" }
+          }
+        },
+        {
+          "comment": "v4: `typealias Name = Type`",
+          "match": "\\b(typealias)\\s+([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "entity.name.type.prsm" }
+          }
+        },
+        {
+          "comment": "v4: `attribute Name(...)`",
+          "match": "\\b(attribute)\\s+([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "entity.name.type.prsm" }
+          }
+        },
+        {
+          "comment": "v4: `extend TypeName`",
+          "match": "\\b(extend)\\s+([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "support.class.prsm" }
+          }
+        },
+        {
+          "comment": "v4: `state machine Name`",
+          "match": "\\b(state)\\s+(machine)\\s+([A-Z][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "keyword.other.prsm" },
+            "3": { "name": "entity.name.type.prsm" }
+          }
         }
       ]
     },
 
     "function-declaration": {
-      "patterns": [{
-        "match": "\\b(func|coroutine)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-        "captures": {
-          "1": { "name": "keyword.other.prsm" },
-          "2": { "name": "entity.name.function.prsm" }
+      "patterns": [
+        {
+          "comment": "v4: `async func name`",
+          "match": "\\b(async)\\s+(func)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "keyword.other.prsm" },
+            "3": { "name": "entity.name.function.prsm" }
+          }
+        },
+        {
+          "comment": "v4: `override func name`",
+          "match": "\\b(override)\\s+(func)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "keyword.other.prsm" },
+            "3": { "name": "entity.name.function.prsm" }
+          }
+        },
+        {
+          "comment": "v4: `abstract func name` and `open func name`",
+          "match": "\\b(abstract|open)\\s+(func)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "keyword.other.prsm" },
+            "3": { "name": "entity.name.function.prsm" }
+          }
+        },
+        {
+          "comment": "v4: `operator name(...)`",
+          "match": "\\b(operator)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "entity.name.function.prsm" }
+          }
+        },
+        {
+          "comment": "v4: `command name(...)`",
+          "match": "\\b(command)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "entity.name.function.prsm" }
+          }
+        },
+        {
+          "comment": "v4: `bind name: Type`",
+          "match": "\\b(bind)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "variable.other.member.prsm" }
+          }
+        },
+        {
+          "comment": "v4: `event name: ...`",
+          "match": "\\b(event)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "variable.other.member.prsm" }
+          }
+        },
+        {
+          "match": "\\b(func|coroutine)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "entity.name.function.prsm" }
+          }
         }
-      }]
+      ]
     },
 
     "field-declaration": {
-      "patterns": [{
-        "match": "\\b(serialize|require|optional|child|parent|val|var)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
-        "captures": {
-          "1": { "name": "keyword.other.prsm" },
-          "2": { "name": "variable.other.member.prsm" }
+      "patterns": [
+        {
+          "comment": "v5: `serialize var hp: Int get set`",
+          "match": "\\b(serialize)\\s+(val|var)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "keyword.other.prsm" },
+            "3": { "name": "variable.other.member.prsm" }
+          }
+        },
+        {
+          "comment": "v3: `serialize`/`require`/`optional`/`child`/`parent` + name",
+          "match": "\\b(serialize|require|optional|child|parent|val|var|const|fixed)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "variable.other.member.prsm" }
+          }
         }
-      }]
+      ]
     },
 
     "type-annotation": {
@@ -156,11 +319,46 @@
     "all-keywords": {
       "patterns": [
         { "name": "keyword.control.import.prsm", "match": "\\busing\\b" },
-        { "name": "keyword.other.prsm", "match": "\\b(component|asset|class|enum|data)\\b" },
-        { "name": "keyword.other.prsm", "match": "\\b(serialize|require|optional|child|parent|public|private|protected)\\b" },
-        { "name": "keyword.other.prsm", "match": "\\b(val|var|func|coroutine|override|return|intrinsic)\\b" },
-        { "name": "keyword.control.prsm", "match": "\\b(if|else|when|for|while|in|until|downTo|step|break|continue|is)\\b" },
-        { "name": "keyword.control.prsm", "match": "\\b(wait|start|stop|stopAll|listen)\\b" },
+        { "name": "keyword.other.prsm", "match": "\\b(component|singleton|asset|class|enum|data|interface|struct|typealias|attribute|extend)\\b" },
+        { "name": "keyword.other.prsm", "match": "\\b(serialize|require|optional|child|parent|pool|public|private|protected)\\b" },
+        { "name": "keyword.other.prsm", "match": "\\b(val|var|const|fixed|func|coroutine|override|return|intrinsic)\\b" },
+        {
+          "comment": "v4 type-system / inheritance modifiers",
+          "name": "keyword.other.prsm",
+          "match": "\\b(abstract|sealed|open|where|operator)\\b"
+        },
+        {
+          "comment": "v5 type/declaration modifiers (partial, ref struct, attribute targets)",
+          "name": "keyword.other.prsm",
+          "match": "\\b(partial|unmanaged|notnull)\\b"
+        },
+        {
+          "comment": "v4 async/await + state-machine + bind/listen + use + event + command",
+          "name": "keyword.other.prsm",
+          "match": "\\b(async|await|state|machine|bind|to|event|command|use)\\b"
+        },
+        {
+          "comment": "v5 Sprint 1: yield (with optional `break` follower) and nameof",
+          "name": "keyword.other.prsm",
+          "match": "\\b(yield|nameof|stackalloc)\\b"
+        },
+        {
+          "comment": "v5 Sprint 2: ref / out / vararg parameter modifiers",
+          "name": "keyword.other.prsm",
+          "match": "\\b(ref|out|vararg)\\b"
+        },
+        {
+          "comment": "v5 Sprint 6: throw (statement and expression position) and with-expression",
+          "name": "keyword.other.prsm",
+          "match": "\\b(throw|with)\\b"
+        },
+        {
+          "comment": "v5 Sprint 4: relational/combinator pattern keywords",
+          "name": "keyword.control.prsm",
+          "match": "\\b(not|and)\\b"
+        },
+        { "name": "keyword.control.prsm", "match": "\\b(if|else|when|for|while|in|until|downTo|step|break|continue|is|as)\\b" },
+        { "name": "keyword.control.prsm", "match": "\\b(wait|start|stop|stopAll|listen|unlisten|try|catch|finally)\\b" },
         { "name": "constant.language.prsm", "match": "\\b(true|false|null|this|nextFrame|fixedFrame)\\b" }
       ]
     },
@@ -175,8 +373,10 @@
 
     "null-operators": {
       "patterns": [
+        { "comment": "v5 Sprint 6: arr?[idx] safe-index access", "name": "keyword.operator.prsm", "match": "\\?\\[" },
         { "name": "keyword.operator.prsm", "match": "\\?\\." },
         { "name": "keyword.operator.prsm", "match": "\\?:" },
+        { "comment": "v4: as! force-cast", "name": "keyword.operator.prsm", "match": "\\bas!" },
         { "name": "keyword.operator.prsm", "match": "!!" },
         { "name": "keyword.operator.prsm", "match": "=>" }
       ]

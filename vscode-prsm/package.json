@@ -398,6 +398,18 @@
               "settings": {
                 "foreground": "#c77dbb"
               }
+            },
+            {
+              "scope": "keyword.control.directive.prsm",
+              "settings": {
+                "foreground": "#cf8e6d"
+              }
+            },
+            {
+              "scope": "constant.other.preprocessor.prsm",
+              "settings": {
+                "foreground": "#16baac"
+              }
             }
           ]
         }
@@ -435,7 +447,7 @@
     "compile": "npm run compile:tests && npm run bundle",
     "compile:tests": "npm run clean:tests && tsc -p ./",
     "package:raw": "npx @vscode/vsce package",
-    "test": "npm run compile && node --test out/test/project-config.test.js out/test/compiler-resolver.test.js out/test/completion-helpers.test.js out/test/diagnostic-range.test.js out/test/generated-source-map.test.js out/test/stack-trace-support.test.js out/test/navigation-helpers.test.js out/test/navigation-rename.test.js out/test/symbol-helpers.test.js out/test/dap-adapter.test.js",
+    "test": "npm run compile && node --test out/test/project-config.test.js out/test/compiler-resolver.test.js out/test/completion-helpers.test.js out/test/diagnostic-range.test.js out/test/generated-source-map.test.js out/test/stack-trace-support.test.js out/test/navigation-helpers.test.js out/test/navigation-rename.test.js out/test/symbol-helpers.test.js out/test/dap-adapter.test.js out/test/grammar-coverage.test.js",
     "typecheck": "tsc --noEmit -p ./",
     "watch": "node ./scripts/bundle.mjs --watch",
     "watch:tests": "tsc -watch -p ./",
