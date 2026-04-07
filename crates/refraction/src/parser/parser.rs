@@ -1047,7 +1047,12 @@ impl Parser {
         while self.check(&TokenKind::At) {
             let start = self.peek_span();
             self.advance(); // consume '@'
-            let (name, _) = self.expect_ident()?;
+            // Issue #19: an attribute target name may be a PrSM keyword
+            // (`@return(notNull)`, `@type(...)`). The previous parser used
+            // `expect_ident` which only accepted Identifier tokens, so the
+            // `return` keyword token was rejected and the second member's
+            // declaration was misparsed as a top-level decl.
+            let (name, _) = self.expect_ident_or_keyword()?;
             let args = if self.eat(&TokenKind::LParen) {
                 let mut a = Vec::new();
                 while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {

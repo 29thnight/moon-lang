@@ -1528,6 +1528,27 @@ hello world
         );
     }
 
+    // Issue #19: an attribute target name that is a PrSM keyword
+    // (`@return`, `@type`) must parse. The previous parser used
+    // `expect_ident` and rejected the `return` keyword token, which
+    // caused the next member declaration to be misparsed as a new
+    // top-level decl.
+    #[test]
+    fn test_attribute_target_with_keyword_name() {
+        let src = "component Probe : MonoBehaviour {\n  @field(nonSerialized)\n  var cache: Int = 0\n\n  @return(notNull)\n  func getName(): String = \"Player\"\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("public class Probe : MonoBehaviour"),
+            "expected component Probe to lower: {}",
+            output
+        );
+        assert!(
+            output.contains("public string getName()"),
+            "expected `getName` method after `@return` annotation: {}",
+            output
+        );
+    }
+
     // Issue #16: a `var name: Type = init` followed by `get`/`set`
     // accessors must continue to be parsed as a single property member.
     // The previous parser closed the field after the initializer and
