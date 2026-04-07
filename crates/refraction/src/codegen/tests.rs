@@ -1359,6 +1359,39 @@ hello world
         );
     }
 
+    // Language 5, Sprint 3: a `bind to` site registers a continuous push
+    // callback so future setter writes propagate to every target.
+    #[test]
+    fn test_bind_to_emits_push_targets_list_and_setter_loop() {
+        let src = r#"component HUD : MonoBehaviour {
+  bind hp: Int = 100
+  awake {
+    bind hp to label.text
+  }
+}"#;
+        let output = compile(src);
+        assert!(
+            output.contains("_pushTargets_hp"),
+            "expected push targets field: {}",
+            output
+        );
+        assert!(
+            output.contains("List<System.Action<int>>"),
+            "expected typed action list: {}",
+            output
+        );
+        assert!(
+            output.contains("_pushTargets_hp.Add(__v => label.text = __v)"),
+            "expected push registration: {}",
+            output
+        );
+        assert!(
+            output.contains("foreach (var __t in _pushTargets_hp) __t(value);"),
+            "expected setter loop: {}",
+            output
+        );
+    }
+
     // ── Language 5, Sprint 1 ──────────────────────────────────────
 
     // Coroutine that uses general `yield expr` and `yield break`.

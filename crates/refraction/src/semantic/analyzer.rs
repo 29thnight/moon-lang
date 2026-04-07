@@ -326,6 +326,11 @@ impl Analyzer {
                 self.check_duplicate_lifecycles(members);
                 // SOLID analysis warnings (Language 3)
                 self.check_solid_warnings(name, members, decl);
+                // Language 5, Sprint 3: W031 — `bind` member never read.
+                // After member analysis the HIR reference set carries every
+                // observed identifier; if a bind name has no references
+                // (and no `bind to` site) we surface the warning.
+                self.check_unused_bind_members(members);
 
                 self.scopes.pop_scope();
                 self.current_decl_name = None;
@@ -1511,6 +1516,42 @@ impl Analyzer {
         }
     }
 
+    /// Language 5, Sprint 3: emit W031 for any `bind` member that is never
+    /// referenced from the rest of the component. The check uses the
+    /// recorded HIR references — both regular identifier reads and the
+    /// `bind to` source string — so a member is considered "read" if it
+    /// appears in any expression position (including `bind to source`).
+    fn check_unused_bind_members(&mut self, members: &[Member]) {
+        // Collect every name in the recorded HIR reference set.
+        let mut referenced: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        for r in &self.hir_references {
+            referenced.insert(r.name.as_str());
+        }
+        // Also count `bind to source` statements as a use of `source`.
+        for m in members {
+            if let Member::Lifecycle { body, .. } = m {
+                collect_bind_to_sources(&body.stmts, &mut referenced);
+            }
+            if let Member::Func { body: FuncBody::Block(block), .. } = m {
+                collect_bind_to_sources(&block.stmts, &mut referenced);
+            }
+            if let Member::Coroutine { body, .. } = m {
+                collect_bind_to_sources(&body.stmts, &mut referenced);
+            }
+        }
+        for m in members {
+            if let Member::BindProperty { name, name_span, .. } = m {
+                if !referenced.contains(name.as_str()) {
+                    self.diag.warning(
+                        "W031",
+                        format!("bind property '{}' is never read", name),
+                        *name_span,
+                    );
+                }
+            }
+        }
+    }
+
     /// Walk a preprocessor condition tree and emit W034 for any unknown
     /// symbols (symbols that are neither curated PrSM aliases nor in the
     /// recognized set of common Unity defines). Unknown symbols still
@@ -2374,6 +2415,63 @@ fn ascii_capitalize(s: &str) -> String {
     }
 }
 
+/// Language 5, Sprint 3: walk a sequence of statements and collect every
+/// `bind X to ...` source name into the provided set. The recursion
+/// covers control-flow constructs and the bodies of nested blocks so
+/// nested registrations are also accounted for by W031.
+fn collect_bind_to_sources<'a>(
+    stmts: &'a [Stmt],
+    out: &mut std::collections::HashSet<&'a str>,
+) {
+    for s in stmts {
+        match s {
+            Stmt::BindTo { source, .. } => {
+                out.insert(source.as_str());
+            }
+            Stmt::If { then_block, else_branch, .. } => {
+                collect_bind_to_sources(&then_block.stmts, out);
+                if let Some(eb) = else_branch {
+                    match eb {
+                        ElseBranch::ElseBlock(block) => {
+                            collect_bind_to_sources(&block.stmts, out);
+                        }
+                        ElseBranch::ElseIf(stmt) => {
+                            collect_bind_to_sources(std::slice::from_ref(stmt.as_ref()), out);
+                        }
+                    }
+                }
+            }
+            Stmt::For { body, .. } | Stmt::While { body, .. } => {
+                collect_bind_to_sources(&body.stmts, out);
+            }
+            Stmt::Try { try_block, catches, finally_block, .. } => {
+                collect_bind_to_sources(&try_block.stmts, out);
+                for c in catches {
+                    collect_bind_to_sources(&c.body.stmts, out);
+                }
+                if let Some(fb) = finally_block {
+                    collect_bind_to_sources(&fb.stmts, out);
+                }
+            }
+            Stmt::Use { body: Some(body), .. } => {
+                collect_bind_to_sources(&body.stmts, out);
+            }
+            Stmt::Listen { body, .. } => {
+                collect_bind_to_sources(&body.stmts, out);
+            }
+            Stmt::Preprocessor { arms, else_arm, .. } => {
+                for arm in arms {
+                    collect_bind_to_sources(&arm.body, out);
+                }
+                if let Some(stmts) = else_arm {
+                    collect_bind_to_sources(stmts, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Language 5, Sprint 1: extract the element type T from an iterator-shaped
 /// PrSM type. Returns `Some(T)` for `Seq<T>`, `IEnumerator<T>`, and
 /// `IEnumerable<T>`. Returns `None` for non-generic iterators or for
@@ -2978,6 +3076,36 @@ component PlayerHealth : MonoBehaviour {
         assert!(
             !diags.iter().any(|d| d.code == "W034"),
             "should not warn on known symbol 'editor': {:?}",
+            diags
+        );
+    }
+
+    // ── Language 5, Sprint 3 ───────────────────────────────────────
+
+    // W031: a `bind` member that has no readers anywhere in the
+    // component should warn.
+    #[test]
+    fn test_bind_member_never_read_w031() {
+        let diags = warnings(
+            "component HUD : MonoBehaviour {\n  bind hp: Int = 100\n}",
+        );
+        assert!(
+            diags.iter().any(|d| d.code == "W031"),
+            "expected W031 for unread bind member: {:?}",
+            diags
+        );
+    }
+
+    // A bind member that has at least one `bind to` site is considered
+    // read and should not trigger W031.
+    #[test]
+    fn test_bind_member_with_bind_to_no_w031() {
+        let diags = warnings(
+            "component HUD : MonoBehaviour {\n  bind hp: Int = 100\n  awake {\n    bind hp to label.text\n  }\n}",
+        );
+        assert!(
+            !diags.iter().any(|d| d.code == "W031"),
+            "should not warn when bind member has a `bind to` site: {:?}",
             diags
         );
     }

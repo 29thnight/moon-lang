@@ -90,20 +90,28 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                 }
             }
 
+            // Lower remaining members — use ComponentCtx to collect listen subscriptions.
+            // Created BEFORE Awake so the user awake block can also register
+            // bind-to / listen sites on the shared context.
+            let mut listen_ctx = ComponentCtx::new(callable_signatures.clone());
+
             // Generate Awake method (require/optional resolution + pool init + user awake)
-            if !require_fields.is_empty() || !optional_fields.is_empty()
+            let awake_index = if !require_fields.is_empty() || !optional_fields.is_empty()
                 || !child_fields.is_empty() || !parent_fields.is_empty()
                 || !pool_fields.is_empty()
                 || user_awake.is_some()
             {
+                let pos = cs_members.len();
                 cs_members.push(lower_awake(
                     name, &require_fields, &optional_fields,
                     &child_fields, &parent_fields, &pool_fields, user_awake, &callable_signatures,
+                    &mut listen_ctx,
                 ));
-            }
-
-            // Lower remaining members — use ComponentCtx to collect listen subscriptions.
-            let mut listen_ctx = ComponentCtx::new(callable_signatures.clone());
+                Some(pos)
+            } else {
+                None
+            };
+            let _ = awake_index;
             let mut command_classes: Vec<CsClass> = Vec::new();
             for m in members {
                 match m {
@@ -154,14 +162,28 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                         command_classes.push(class);
                     }
                     Member::BindProperty { name: bname, ty, init, .. } => {
-                        cs_members.extend(lower_bind_property(
-                            bname,
-                            ty,
-                            init.as_ref(),
-                            &callable_signatures,
-                        ));
+                        // Defer bind property lowering until after the
+                        // bodies are walked so we know which `bind to`
+                        // sites exist for this name.
+                        let _ = (bname, ty, init);
                     }
                     _ => {}
+                }
+            }
+
+            // Language 5, Sprint 3: now that bodies have been walked we
+            // know every `bind to` source. Emit each bind property with
+            // matching push targets list and a setter loop.
+            for m in members {
+                if let Member::BindProperty { name: bname, ty, init, .. } = m {
+                    let needs_push = listen_ctx.bind_to_sources.contains(bname);
+                    cs_members.extend(lower_bind_property_with_push(
+                        bname,
+                        ty,
+                        init.as_ref(),
+                        &callable_signatures,
+                        needs_push,
+                    ));
                 }
             }
 
@@ -1242,6 +1264,7 @@ fn lower_awake(
     pools: &[PoolInfo],
     user_awake: Option<&Block>,
     callable_signatures: &HashMap<String, CallableSignature>,
+    listen_ctx: &mut ComponentCtx,
 ) -> CsMember {
     let mut body = Vec::new();
 
@@ -1360,11 +1383,13 @@ fn lower_awake(
         });
     }
 
-    // User awake block
+    // User awake block — route through the component-aware lowerer so
+    // `bind to`, `listen`, and similar statements register on the
+    // shared ComponentCtx (Sprint 3 needed for bind continuous push).
+    let _ = callable_signatures;
     if let Some(awake_block) = user_awake {
-        for stmt in &awake_block.stmts {
-            body.push(lower_stmt_with_context(stmt, Some(callable_signatures), None));
-        }
+        let lowered = lower_stmts_with_ctx(&awake_block.stmts, listen_ctx, None);
+        body.extend(lowered);
     }
 
     CsMember::Method {
@@ -3877,11 +3902,23 @@ struct ComponentCtx {
     next_id: usize,
     records: Vec<SubscriptionRecord>,
     callable_signatures: HashMap<String, CallableSignature>,
+    /// Language 5, Sprint 3: every `bind X to target` site discovered
+    /// while lowering lifecycle / func / coroutine bodies. Keys are the
+    /// bind property name (`X`); the value tracks how many push targets
+    /// have been registered. The bind setter walks the matching
+    /// `_pushTargets_X` list and invokes each callback when the value
+    /// changes.
+    bind_to_sources: std::collections::HashSet<String>,
 }
 
 impl ComponentCtx {
     fn new(callable_signatures: HashMap<String, CallableSignature>) -> Self {
-        ComponentCtx { next_id: 0, records: Vec::new(), callable_signatures }
+        ComponentCtx {
+            next_id: 0,
+            records: Vec::new(),
+            callable_signatures,
+            bind_to_sources: std::collections::HashSet::new(),
+        }
     }
 
     fn alloc_handler(&mut self) -> String {
@@ -3971,6 +4008,34 @@ fn lower_stmt_with_ctx(
                 else_body,
                 source_span: Some(*span),
             }]
+        }
+        // Language 5, Sprint 3: `bind X to target` — emit initial sync AND
+        // register a continuous-push callback so future setter writes
+        // propagate. We collect every distinct source name in
+        // `ctx.bind_to_sources` so the component lowering pass can later
+        // emit the matching `_pushTargets_X` field and update the
+        // setter to walk it.
+        Stmt::BindTo { source, target, span, .. } => {
+            ctx.bind_to_sources.insert(source.clone());
+            let target_str = lower_expr_with_expected_type(target, None, Some(&ctx.callable_signatures));
+            let push_field = format!("_pushTargets_{}", source);
+            vec![
+                // Initial sync — keep the v4 behavior so the UI is primed.
+                CsStmt::Assignment {
+                    target: target_str.clone(),
+                    op: "=".into(),
+                    value: format!("this.{}", source),
+                    source_span: Some(*span),
+                },
+                // Register a push callback. The lambda is created lazily
+                // so the bind property setter doesn't need to know its
+                // call sites; the list is initialized to a fresh
+                // `List<Action<T>>` in the field declaration.
+                CsStmt::Expr(
+                    format!("{}.Add(__v => {} = __v)", push_field, target_str),
+                    Some(*span),
+                ),
+            ]
         }
         Stmt::Unlisten { token, span } => {
             // Resolve the token via ctx; if not found emit a diagnostic comment.
@@ -4856,11 +4921,26 @@ fn is_ident_byte(b: u8) -> bool {
 /// field that calls `OnPropertyChanged(nameof(name))` on assignment. This
 /// generates a minimal INotifyPropertyChanged plumbing that the owning
 /// component can expose via `implements INotifyPropertyChanged`.
+#[allow(dead_code)]
 fn lower_bind_property(
     name: &str,
     ty: &TypeRef,
     init: Option<&Expr>,
     callable_signatures: &HashMap<String, CallableSignature>,
+) -> Vec<CsMember> {
+    lower_bind_property_with_push(name, ty, init, callable_signatures, false)
+}
+
+/// Language 5, Sprint 3: extended `lower_bind_property` that emits a
+/// `_pushTargets_X` list and walks it from the setter when at least one
+/// `bind X to target` site exists in the component. The flag is set by
+/// the component lowering pass after walking lifecycle / func bodies.
+fn lower_bind_property_with_push(
+    name: &str,
+    ty: &TypeRef,
+    init: Option<&Expr>,
+    callable_signatures: &HashMap<String, CallableSignature>,
+    needs_push_targets: bool,
 ) -> Vec<CsMember> {
     let cs_ty = lower_type(ty);
     let backing = format!("_{}", name);
@@ -4877,8 +4957,22 @@ fn lower_bind_property(
         init: init_str,
     });
 
-    // public T name { get => _name; set { if (_name != value) { _name = value; OnPropertyChanged(nameof(name)); } } }
-    let body = vec![
+    // private List<Action<T>> _pushTargets_name = new();
+    if needs_push_targets {
+        out.push(CsMember::Field {
+            attributes: vec![],
+            modifiers: "private".into(),
+            ty: format!("System.Collections.Generic.List<System.Action<{}>>", cs_ty),
+            name: format!("_pushTargets_{}", name),
+            init: Some(format!(
+                "new System.Collections.Generic.List<System.Action<{}>>()",
+                cs_ty
+            )),
+        });
+    }
+
+    // public T name { get => _name; set { if (_name != value) { _name = value; OnPropertyChanged(nameof(name)); push targets... } } }
+    let mut body = vec![
         format!("public {} {}", cs_ty, name),
         "{".into(),
         format!("    get => {};", backing),
@@ -4888,10 +4982,15 @@ fn lower_bind_property(
         "        {".into(),
         format!("            {} = value;", backing),
         format!("            OnPropertyChanged(nameof({}));", name),
+    ];
+    if needs_push_targets {
+        body.push(format!("            foreach (var __t in _pushTargets_{}) __t(value);", name));
+    }
+    body.extend([
         "        }".into(),
         "    }".into(),
         "}".into(),
-    ];
+    ]);
     out.push(CsMember::RawCode(body.join("\n")));
 
     out
