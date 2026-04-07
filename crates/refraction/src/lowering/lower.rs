@@ -2487,20 +2487,17 @@ fn lower_stmt_with_context(
         Stmt::Throw { expr, .. } => {
             // PrSM `throw` accepts two distinct target shapes:
             //
-            //   throw Exception("msg")     // construction → needs `new`
-            //   throw e                    // rethrow / variable → forward verbatim
+            //   throw Exception("msg")     // construction
+            //   throw e                    // rethrow / variable
             //
-            // The unconditional `new` prefix used in earlier versions
-            // produced invalid C# (`throw new e;`) for the rethrow case.
-            // `throw_target_needs_new` decides per-site via a PascalCase
-            // Call heuristic that mirrors the PrSM type-naming convention.
+            // After issue #9 the `Expr::Call` lowering itself prepends
+            // `new` to PascalCase calls, so a constructor target like
+            // `throw Exception("msg")` already lowers to
+            // `new Exception("msg")`. We forward verbatim — variable
+            // rethrow stays as `throw e;` and constructor throws become
+            // `throw new Exception("msg");` automatically.
             let expr_str = lower_expr_with_expected_type(expr, None, callable_signatures);
-            let target = if throw_target_needs_new(expr) {
-                format!("new {}", expr_str)
-            } else {
-                expr_str
-            };
-            CsStmt::Throw(target, source_span)
+            CsStmt::Throw(expr_str, source_span)
         }
         Stmt::Use { name, ty, init, body, .. } => {
             let cs_ty = ty.as_ref().map(|t| lower_type(t)).unwrap_or("var".into());
@@ -3004,6 +3001,15 @@ fn lower_expr_with_expected_type(
                 let mapped = map_sugar_call(name, &ta_str, &args_str);
                 if let Some(m) = mapped {
                     m
+                } else if name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                    // Issue #9: PrSM convention reserves PascalCase for
+                    // type names, so a receiver-less PascalCase Call is
+                    // a constructor invocation rather than a function
+                    // call. The lang-4 spec example `Color32(255, ...)`
+                    // and any `data class` / `struct` instantiation use
+                    // this form. Lower to a C# `new`-prefixed
+                    // constructor call so the result is valid C#.
+                    format!("new {}{}({})", name, ta_str, args_str.join(", "))
                 } else {
                     format!("{}{}({})", name, ta_str, args_str.join(", "))
                 }
@@ -3240,19 +3246,14 @@ fn lower_expr_with_expected_type(
             format!("{}?[{}]", recv, idx)
         }
         // Language 5, Sprint 6: `throw expr` in expression position.
-        // Shares the same `throw_target_needs_new` decision used by
-        // `Stmt::Throw` so that constructor throws receive the `new`
-        // prefix while variable rethrow / member access targets are
-        // forwarded verbatim. C# throw expressions accept both shapes
-        // (`throw new E(...)` and `throw e`) when used as the right
-        // operand of `??` or as a conditional-expression branch.
+        // After issue #9 the `Expr::Call` lowering prepends `new` to
+        // PascalCase constructor calls, so this site simply forwards
+        // the lowered inner expression. Variable references stay as
+        // `throw e`; constructor throws become `throw new E(...)`
+        // automatically.
         Expr::ThrowExpr { exception, .. } => {
             let exc = lower_expr_with_expected_type(exception, None, callable_signatures);
-            if throw_target_needs_new(exception) {
-                format!("throw new {}", exc)
-            } else {
-                format!("throw {}", exc)
-            }
+            format!("throw {}", exc)
         }
         // v5 (deferred): `receiver with { field = value, ... }` lowers to
         // a C# `with`-expression. C# 9 records support this directly;
@@ -3280,33 +3281,6 @@ fn lower_expr_with_expected_type(
             let size_str = lower_expr_with_expected_type(size, None, callable_signatures);
             format!("stackalloc {}[{}]", ty, size_str)
         }
-    }
-}
-
-/// Decide whether a `throw` target expression should be prefixed with
-/// `new` when lowered to C#.
-///
-/// PrSM throw targets fall into two categories:
-///
-/// 1. **Construction** — `throw Exception("msg")` (a `Call` whose name is
-///    PascalCase). The lowered C# must be `throw new Exception("msg")`.
-/// 2. **Reference / rethrow** — `throw e`, `throw factory()`,
-///    `throw cached.exception`. The lowered C# must forward verbatim
-///    (`throw e`, `throw factory()`).
-///
-/// The PascalCase Call heuristic is consistent with PrSM's naming
-/// convention (types are PascalCase, members and locals are camelCase).
-/// A more precise lookup against `callable_signatures` could replace the
-/// heuristic later, but for the common Unity pattern this is sufficient.
-///
-/// Used by both `Stmt::Throw` (statement form) and `Expr::ThrowExpr`
-/// (Language 5 Sprint 6 expression form) so the two sites stay in sync.
-fn throw_target_needs_new(expr: &Expr) -> bool {
-    match expr {
-        Expr::Call { name, .. } => {
-            name.chars().next().map_or(false, |c| c.is_uppercase())
-        }
-        _ => false,
     }
 }
 

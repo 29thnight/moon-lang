@@ -1478,6 +1478,27 @@ hello world
         );
     }
 
+    // Issue #9: a receiver-less PascalCase Call is treated as a
+    // constructor invocation and the lowering prepends `new`. Without
+    // this fix, every `data class` / `struct` instantiation produced
+    // invalid C# (`var info = DamageInfo(10, true);` — no method
+    // `DamageInfo`).
+    #[test]
+    fn test_pascalcase_call_lowers_with_new() {
+        let src = "data class DamageInfo(amount: Int, crit: Bool)";
+        let _ = compile(src); // Generates the data class itself.
+
+        // Use the data class from a sibling component (separate compile
+        // unit since #8 forbids two top-level decls in one file).
+        let src = "component Probe : MonoBehaviour {\n  func go() {\n    val info = DamageInfo(10, true)\n  }\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("var info = new DamageInfo(10, true)"),
+            "expected `new DamageInfo(10, true)`: {}",
+            output
+        );
+    }
+
     // Issue #3: `val ref` with an explicit type lowers to a valid
     // `ref readonly T name = ref expr;` statement. The annotation is
     // trusted by the semantic analyzer (no E020 type-mismatch from the
