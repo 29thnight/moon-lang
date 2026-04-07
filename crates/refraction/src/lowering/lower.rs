@@ -475,8 +475,8 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                 vec![],
             )
         }
-        Decl::DataClass { name, fields, .. } => {
-            (lower_data_class(name, fields), vec![])
+        Decl::DataClass { name, fields, members, .. } => {
+            (lower_data_class(name, fields, members), vec![])
         }
         Decl::Enum { name, params, entries, .. } => {
             let mut cs_members = Vec::new();
@@ -640,8 +640,12 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
     }
 }
 
-fn lower_data_class(name: &str, fields: &[Param]) -> CsClass {
+fn lower_data_class(name: &str, fields: &[Param], members: &[Member]) -> CsClass {
     let mut cs_members = Vec::new();
+    // Issue #32: collect callable signatures from the body members so
+    // operator overloads / methods inside the data class can call
+    // each other and reference the synthesized fields.
+    let callable_signatures = collect_callable_signatures(members);
 
     for field in fields {
         cs_members.push(CsMember::Field {
@@ -657,6 +661,37 @@ fn lower_data_class(name: &str, fields: &[Param]) -> CsClass {
     cs_members.push(lower_data_class_equals(name, fields));
     cs_members.push(lower_data_class_hash_code(fields));
     cs_members.push(lower_data_class_to_string(name, fields));
+
+    // Issue #32: emit operator overloads, methods, computed properties,
+    // and static constants from the optional `data class` body block.
+    // Reuses the same lowering helpers as `class` and `struct`. Field
+    // names are passed into the operator member lowering so the body
+    // can rewrite bare references (`x`, `y`) into `left.x` / `left.y`.
+    let owner_field_names: Vec<String> = fields.iter().map(|f| f.name.clone()).collect();
+    for m in members {
+        match m {
+            Member::Field { .. } => cs_members.extend(lower_field_member(m)),
+            Member::Func { is_operator: true, name: op_name, params, return_ty, body, .. } => {
+                cs_members.extend(lower_operator_member_with_fields(
+                    op_name, name, params, return_ty, body, &owner_field_names,
+                ));
+            }
+            Member::Func { .. } => cs_members.push(lower_func_member(m, &callable_signatures)),
+            Member::Property { name: pname, ty, mutability, getter, setter, is_serialize, target_annotations, .. } => {
+                cs_members.extend(lower_property_member_with_targets(
+                    pname,
+                    ty,
+                    *mutability,
+                    getter,
+                    setter,
+                    *is_serialize,
+                    target_annotations,
+                ));
+            }
+            _ => {}
+        }
+    }
+
     if needs_expr_helper(&cs_members) {
         cs_members.push(lower_expr_helper_member());
     }
@@ -4103,6 +4138,21 @@ fn lower_operator_member(
     return_ty: &Option<TypeRef>,
     body: &FuncBody,
 ) -> Vec<CsMember> {
+    lower_operator_member_with_fields(name, enclosing_type, params, return_ty, body, &[])
+}
+
+/// Issue #32: extended operator member lowering that takes the
+/// enclosing type's field names so the operator body can rewrite
+/// bare field references (`x`, `y`) into their `left.x` / `left.y`
+/// form (operators are static methods and `this` does not exist).
+fn lower_operator_member_with_fields(
+    name: &str,
+    enclosing_type: &str,
+    params: &[Param],
+    return_ty: &Option<TypeRef>,
+    body: &FuncBody,
+    owner_fields: &[String],
+) -> Vec<CsMember> {
     let mut result = Vec::new();
 
     // Indexer: operator get / operator set
@@ -4125,13 +4175,24 @@ fn lower_operator_member(
                 default: None, modifier: CsParamMod::None,
             });
         }
-        let cs_body = match body {
+        let mut cs_body = match body {
             FuncBody::ExprBody(expr) => {
                 let expr_str = lower_expr(expr);
                 vec![CsStmt::Return(Some(expr_str), None)]
             }
             FuncBody::Block(block) => block.stmts.iter().map(|s| lower_stmt(s)).collect(),
         };
+        // Issue #32: rewrite bare field references in the operator
+        // body to `left.field`. The operator parameter name (if any)
+        // is excluded so the right-hand operand stays unchanged.
+        for f in owner_fields {
+            if let Some(p) = params.first() {
+                if &p.name == f {
+                    continue;
+                }
+            }
+            replace_ident_in_stmts(&mut cs_body, f, &format!("left.{}", f));
+        }
         result.push(CsMember::Method {
             attributes: vec![],
             modifiers: "public static".into(),
@@ -5367,7 +5428,13 @@ fn replace_word(text: &str, from: &str, to: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if i + from_bytes.len() <= bytes.len() && &bytes[i..i + from_bytes.len()] == from_bytes {
-            let prev_ok = i == 0 || !is_ident_byte(bytes[i - 1]);
+            // The previous byte must not start a member access (`.x`,
+            // `?.x`) or be part of another identifier. Member access
+            // expressions reference a different scope and must not be
+            // rewritten — this guards against `other.x` becoming
+            // `other.left.x` after a bare-`x` rewrite (#32).
+            let prev_ok = i == 0
+                || (!is_ident_byte(bytes[i - 1]) && bytes[i - 1] != b'.');
             let next_ok = i + from_bytes.len() == bytes.len()
                 || !is_ident_byte(bytes[i + from_bytes.len()]);
             if prev_ok && next_ok {

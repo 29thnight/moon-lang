@@ -744,22 +744,26 @@ impl Parser {
         }
         self.expect(&TokenKind::RParen)?;
 
-        // Issue #15 (partial fix): a `data class` declaration may carry
-        // a body block of operator overloads, methods, and static
-        // members. The AST does not yet model these as DataClass
-        // members and the lowering pipeline does not emit them. Consume
-        // the body verbatim so the parser does not emit a confusing
-        // E189 multi-decl false positive on the trailing `{`. Full
-        // body member support is tracked as follow-up #32.
+        // Issue #32: a `data class` declaration may carry a body
+        // block of operator overloads, methods, computed properties,
+        // and static constants. Parse it via the same `parse_members`
+        // machinery used by `class` so the AST holds real `Member`
+        // nodes that the lowering pipeline can emit.
         self.skip_newlines();
-        if self.check(&TokenKind::LBrace) {
-            let _ = self.parse_raw_brace_block()?;
-        }
+        let members = if self.eat(&TokenKind::LBrace) {
+            let ms = self.parse_members()?;
+            self.skip_newlines();
+            self.expect(&TokenKind::RBrace)?;
+            ms
+        } else {
+            Vec::new()
+        };
 
         Ok(Decl::DataClass {
             name,
             name_span,
             fields,
+            members,
             span: Span { start: start.start, end: self.peek_span().end },
         })
     }

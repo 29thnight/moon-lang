@@ -1528,6 +1528,30 @@ hello world
         );
     }
 
+    // Issue #32: a `data class` body block parses operator overloads
+    // and the lowering emits each operator as a static C# method that
+    // references the synthesized fields via `left.x` / `left.y`.
+    #[test]
+    fn test_data_class_body_operator_overload_lowers() {
+        let src = "data class Vec2i(x: Int, y: Int) {\n  operator plus(other: Vec2i): Vec2i = Vec2i(x + other.x, y + other.y)\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("public class Vec2i"),
+            "expected Vec2i data class to lower: {}",
+            output
+        );
+        assert!(
+            output.contains("public static Vec2i operator +(Vec2i left, Vec2i other)"),
+            "expected operator + method: {}",
+            output
+        );
+        assert!(
+            output.contains("new Vec2i(left.x + other.x, left.y + other.y)"),
+            "expected `left.x + other.x` field rewrite (not `x + other.left.x`): {}",
+            output
+        );
+    }
+
     // Issue #24: command sugar nested ICommand class rewrites bare
     // owner-member references to `_owner.name` (fields, properties,
     // methods, lookup fields, and Unity-component built-ins like

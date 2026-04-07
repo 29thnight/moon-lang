@@ -69,6 +69,10 @@ pub enum Decl {
         name: String,
         name_span: Span,
         fields: Vec<Param>,
+        /// v5 (#32): optional `{ ... }` body containing operator
+        /// overloads, methods, computed properties, and static
+        /// constants. Empty for the bare `data class Foo(a, b)` shape.
+        members: Vec<Member>,
         span: Span,
     },
     Enum {
