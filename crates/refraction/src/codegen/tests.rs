@@ -1528,6 +1528,28 @@ hello world
         );
     }
 
+    // Issue #27: a multi-line PrSM string (typically from a raw string
+    // literal `"""..."""`) lowers to a C# verbatim string `@"..."`
+    // with embedded `"` escaped as `""`. Single-line strings continue
+    // to use the regular form so existing tests stay green.
+    #[test]
+    fn test_raw_string_lowers_to_verbatim_string() {
+        let src = "component Probe : MonoBehaviour {\n  func go() {\n    val json = \"\"\"\n    {\n        \\\"name\\\": \\\"Player\\\"\n    }\n    \"\"\"\n    log(json)\n  }\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("@\""),
+            "expected verbatim string `@\"...\"` for raw string lowering: {}",
+            output
+        );
+        // Embedded `"` must be escaped as `""` inside the verbatim
+        // form (the input PrSM has `\"` which lexer turns into `\"`).
+        assert!(
+            output.contains("\"\"name\"\""),
+            "expected escaped `\"\"name\"\"` inside verbatim string: {}",
+            output
+        );
+    }
+
     // Issue #23: `operator get` / `operator set` indexer declarations
     // must NOT trigger the reserved-name E101 check that applies to
     // free-standing `func get()`. The two have different lowerings: a

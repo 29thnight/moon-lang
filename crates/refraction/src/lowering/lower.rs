@@ -2909,7 +2909,20 @@ fn lower_expr_with_expected_type(
         Expr::IntLit(n, _) => n.to_string(),
         Expr::FloatLit(n, _) => format_float(*n),
         Expr::DurationLit(n, _) => format_float(*n),
-        Expr::StringLit(s, _) => format!("\"{}\"", s),
+        Expr::StringLit(s, _) => {
+            // Issue #27: a multi-line string (typically lowered from a
+            // PrSM raw string `"""..."""`) cannot be emitted as a regular
+            // C# `"..."` literal. Use a verbatim string `@"..."` for any
+            // literal that contains real newlines or carriage returns;
+            // inside a verbatim string only `"` requires escaping (as `""`).
+            // Single-line strings continue to use the regular form so
+            // existing snapshot tests stay green.
+            if s.contains('\n') || s.contains('\r') {
+                format!("@\"{}\"", s.replace('"', "\"\""))
+            } else {
+                format!("\"{}\"", s)
+            }
+        }
         Expr::StringInterp { parts, .. } => {
             let mut result = String::from("$\"");
             for part in parts {
