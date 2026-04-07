@@ -3831,18 +3831,32 @@ fn lower_property_member_with_targets(
         // Full property with get block and optional set
         (Some(getter_body), setter_opt) => {
             let backing = format!("_{}", name);
-            // Backing field if setter exists
+            // Backing field if setter exists. Issue #2: wrap each
+            // attribute in `[...]` so the emitter (which writes the
+            // strings verbatim) produces valid C# attribute syntax.
+            // Without this the lowered code emitted bare tokens like
+            // `SerializeField` instead of `[SerializeField]`.
             if setter_opt.is_some() {
+                let bracketed_field_attrs: Vec<String> = field_attrs
+                    .iter()
+                    .map(|a| format!("[{}]", a))
+                    .collect();
                 result.push(CsMember::Field {
-                    attributes: field_attrs.clone(),
+                    attributes: bracketed_field_attrs,
                     modifiers: "private".into(),
                     ty: cs_ty.clone(),
                     name: backing.clone(),
                     init: None,
                 });
             }
+            // Issue #2: a `serialize var hp: Int { get; set { ... } }`
+            // declaration has an empty getter body (the user wants the
+            // backing field returned verbatim). Detect that shape and
+            // emit a simple backing-field return so the lowered C#
+            // does not contain `return ;`.
             let getter_str = match getter_body {
                 FuncBody::ExprBody(expr) => lower_expr(expr).replace("field", &backing),
+                FuncBody::Block(block) if block.stmts.is_empty() => backing.clone(),
                 FuncBody::Block(block) => {
                     let stmts: Vec<CsStmt> = block.stmts.iter().map(|s| lower_stmt(s)).collect();
                     let lines: Vec<String> = stmts.iter().flat_map(|s| emit_stmt_lines(s, "            ")).collect();

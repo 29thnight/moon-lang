@@ -1478,6 +1478,36 @@ hello world
         );
     }
 
+    // Issue #2: a `serialize var hp: Int { get; set { ... } }`
+    // declaration must lower to a backing field carrying
+    // `[SerializeField]` (with brackets), and the empty getter must
+    // emit `return _hp;` rather than the broken `return ;`.
+    #[test]
+    fn test_serialize_property_with_custom_setter_emits_brackets_and_backing_return() {
+        let src = "component Player : MonoBehaviour {\n  serialize var hp: Int = 100\n    get\n    set { field = Mathf.clamp(value, 0, 200) }\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("[SerializeField]"),
+            "expected `[SerializeField]` (with brackets) on backing field: {}",
+            output
+        );
+        assert!(
+            !output.contains("\n    SerializeField\n"),
+            "lowered output contains bare `SerializeField` token without brackets: {}",
+            output
+        );
+        assert!(
+            output.contains("return _hp;"),
+            "expected getter to return backing field `_hp`: {}",
+            output
+        );
+        assert!(
+            !output.contains("return ;"),
+            "lowered output contains broken `return ;` empty getter: {}",
+            output
+        );
+    }
+
     // Issue #9: a receiver-less PascalCase Call is treated as a
     // constructor invocation and the lowering prepends `new`. Without
     // this fix, every `data class` / `struct` instantiation produced
