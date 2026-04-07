@@ -1528,6 +1528,27 @@ hello world
         );
     }
 
+    // Issue #23: `operator get` / `operator set` indexer declarations
+    // must NOT trigger the reserved-name E101 check that applies to
+    // free-standing `func get()`. The two have different lowerings: a
+    // free `get` collides with the `GetComponent<T>()` sugar, but the
+    // operator form lowers to a C# `this[...]` indexer.
+    #[test]
+    fn test_operator_get_set_indexer_not_rejected() {
+        let src = "class Inventory {\n  var items: List<Int> = []\n  operator get(index: Int): Int = items[index]\n  operator set(index: Int, value: Int) { items[index] = value }\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("public class Inventory"),
+            "expected class Inventory to lower: {}",
+            output
+        );
+        assert!(
+            output.contains("this[int index]"),
+            "expected `this[int index]` indexer member: {}",
+            output
+        );
+    }
+
     // Issue #17: tuple destructure `val (a, b) = expr` lowers to a
     // C# tuple deconstruction `var (a, b) = expr;`. The lang-4 spec
     // example for tuples and the v5 discard destructure both depend

@@ -710,11 +710,18 @@ impl Analyzer {
                 name,
                 name_span,
                 return_ty,
+                is_operator,
                 ..
             } => {
-                // Reserved built-in sugar names cannot be used as user function names.
+                // Issue #23: reserved built-in sugar names (`get`, `find`)
+                // cannot be used as user function names because they map
+                // to the Unity API GetComponent / FindFirstObjectByType
+                // sugar. The check must be skipped for `operator get` and
+                // `operator set` declarations, which are the lang-4
+                // indexer syntax and lower to a C# `this[...]` member
+                // (no name collision with the sugar).
                 const RESERVED_SUGAR_NAMES: &[&str] = &["get", "find"];
-                if RESERVED_SUGAR_NAMES.contains(&name.as_str()) {
+                if !*is_operator && RESERVED_SUGAR_NAMES.contains(&name.as_str()) {
                     self.diag.error(
                         "E101",
                         format!("'{}' is a reserved built-in method name (maps to Unity API). Choose a different name.", name),
