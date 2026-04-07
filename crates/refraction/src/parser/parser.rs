@@ -1935,8 +1935,19 @@ impl Parser {
         let start = self.peek_span();
         self.advance(); // consume 'val'
 
+        // v5 Sprint 3: `val ref name = ref expr` — reference local
+        // declaration. We detect the optional `ref` modifier here and
+        // require the init expression to be `ref expr` (Expr::RefOf).
+        let is_ref = if self.check_contextual("ref") {
+            self.advance();
+            true
+        } else {
+            false
+        };
+
         // v2: `val TypeName(a, b) = expr` — destructuring declaration.
         // Attempt speculative binding-pattern parse BEFORE consuming the name.
+        if !is_ref {
         if let Some(bp) = self.try_parse_binding_pattern()? {
             self.expect(&TokenKind::Eq)?;
             let init = self.parse_expr()?;
@@ -1952,6 +1963,7 @@ impl Parser {
                 span: Span { start: start.start, end: self.peek_span().end },
             });
         }
+        } // close `if !is_ref` for binding pattern guard
 
         let (name, name_span) = self.expect_ident()?;
         let ty = if self.eat(&TokenKind::Colon) {
@@ -1962,7 +1974,7 @@ impl Parser {
         self.expect(&TokenKind::Eq)?;
         // Special case: `val token = listen event manual { … }`
         // `listen` is not a general expression, so we handle it here.
-        if self.check(&TokenKind::Listen) {
+        if !is_ref && self.check(&TokenKind::Listen) {
             let mut listen = self.parse_listen_stmt()?;
             if let Stmt::Listen { ref mut lifetime, ref mut bound_name, .. } = listen {
                 if *lifetime != ListenLifetime::Manual {
@@ -1977,14 +1989,46 @@ impl Parser {
             }
             return Ok(listen);
         }
-        let init = self.parse_expr()?;
+        // For `val ref name = ref expr`, the parser produces `Expr::RefOf`
+        // for the init by recognizing the leading `ref` keyword.
+        let init = if is_ref {
+            let ref_start = self.peek_span();
+            if self.check_contextual("ref") {
+                self.advance();
+            } else {
+                return Err(self.error(
+                    "val ref binding must be initialized with `ref expr`".into()
+                ));
+            }
+            let inner = self.parse_expr()?;
+            Expr::RefOf {
+                inner: Box::new(inner),
+                span: Span { start: ref_start.start, end: self.peek_span().end },
+            }
+        } else {
+            self.parse_expr()?
+        };
         self.expect_newline_or_eof();
-        Ok(Stmt::ValDecl { name, name_span, ty, init, span: Span { start: start.start, end: self.peek_span().end } })
+        Ok(Stmt::ValDecl {
+            name,
+            name_span,
+            ty,
+            init,
+            is_ref,
+            span: Span { start: start.start, end: self.peek_span().end },
+        })
     }
 
     fn parse_var_stmt(&mut self) -> Result<Stmt, ParseError> {
         let start = self.peek_span();
         self.advance(); // consume 'var'
+        // v5 Sprint 3: optional `ref` modifier — `var ref name = ref expr`.
+        let is_ref = if self.check_contextual("ref") {
+            self.advance();
+            true
+        } else {
+            false
+        };
         let (name, name_span) = self.expect_ident()?;
         let ty = if self.eat(&TokenKind::Colon) {
             Some(self.parse_type()?)
@@ -1992,12 +2036,38 @@ impl Parser {
             None
         };
         let init = if self.eat(&TokenKind::Eq) {
-            Some(self.parse_expr()?)
+            // For `var ref name = ref expr`, wrap the inner expression
+            // in `Expr::RefOf` so the lowering step can emit `ref expr`
+            // verbatim.
+            if is_ref {
+                let ref_start = self.peek_span();
+                if self.check_contextual("ref") {
+                    self.advance();
+                } else {
+                    return Err(self.error(
+                        "var ref binding must be initialized with `ref expr`".into()
+                    ));
+                }
+                let inner = self.parse_expr()?;
+                Some(Expr::RefOf {
+                    inner: Box::new(inner),
+                    span: Span { start: ref_start.start, end: self.peek_span().end },
+                })
+            } else {
+                Some(self.parse_expr()?)
+            }
         } else {
             None
         };
         self.expect_newline_or_eof();
-        Ok(Stmt::VarDecl { name, name_span, ty, init, span: Span { start: start.start, end: self.peek_span().end } })
+        Ok(Stmt::VarDecl {
+            name,
+            name_span,
+            ty,
+            init,
+            is_ref,
+            span: Span { start: start.start, end: self.peek_span().end },
+        })
     }
 
     fn parse_if_stmt(&mut self) -> Result<Stmt, ParseError> {
@@ -2272,13 +2342,38 @@ impl Parser {
     fn parse_return_stmt(&mut self) -> Result<Stmt, ParseError> {
         let start = self.peek_span();
         self.advance(); // consume 'return'
+        // v5 Sprint 3: `return ref expr` — only valid inside a function
+        // declared with a `ref` return type. The parser unconditionally
+        // accepts the modifier; downstream lowering wraps the expression
+        // in `Expr::RefOf` so emission can produce `return ref expr;`.
+        let is_ref = if self.check_contextual("ref")
+            && !matches!(self.tokens.get(self.pos + 1).map(|t| t.kind.clone()), Some(TokenKind::Newline) | Some(TokenKind::Eof) | Some(TokenKind::RBrace))
+        {
+            self.advance();
+            true
+        } else {
+            false
+        };
         let value = if !matches!(self.peek(), TokenKind::Newline | TokenKind::Eof | TokenKind::RBrace) {
-            Some(self.parse_expr()?)
+            let inner = self.parse_expr()?;
+            if is_ref {
+                let span = Span { start: start.start, end: self.peek_span().end };
+                Some(Expr::RefOf {
+                    inner: Box::new(inner),
+                    span,
+                })
+            } else {
+                Some(inner)
+            }
         } else {
             None
         };
         self.expect_newline_or_eof();
-        Ok(Stmt::Return { value, span: Span { start: start.start, end: self.peek_span().end } })
+        Ok(Stmt::Return {
+            value,
+            is_ref,
+            span: Span { start: start.start, end: self.peek_span().end },
+        })
     }
 
     fn parse_wait_stmt(&mut self) -> Result<Stmt, ParseError> {
@@ -4081,7 +4176,8 @@ impl Expr {
             | Expr::ListLit { span, .. }
             | Expr::MapLit { span, .. }
             | Expr::Await { span, .. }
-            | Expr::NameOf { span, .. } => *span,
+            | Expr::NameOf { span, .. }
+            | Expr::RefOf { span, .. } => *span,
         }
     }
 }

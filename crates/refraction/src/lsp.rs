@@ -2017,6 +2017,8 @@ fn collect_used_namespaces_for_expr(expr: &Expr, used_namespaces: &mut HashSet<S
         // Language 5, Sprint 2: `nameof(x)` references no namespace beyond
         // the surrounding type — it's emitted verbatim.
         | Expr::NameOf { .. } => {}
+        // Language 5, Sprint 3: `ref expr` recurses into the inner expr.
+        Expr::RefOf { inner, .. } => collect_used_namespaces_for_expr(inner, used_namespaces),
         Expr::StringInterp { parts, .. } => {
             for part in parts {
                 if let StringPart::Expr(expr) = part {
@@ -2456,6 +2458,8 @@ fn expr_contains_intrinsic_code(expr: &Expr) -> bool {
             expr_contains_intrinsic_code(k) || expr_contains_intrinsic_code(v)
         }),
         Expr::Await { expr: inner, .. } => expr_contains_intrinsic_code(inner),
+        // Language 5, Sprint 3: `ref expr` recurses into the inner expr.
+        Expr::RefOf { inner, .. } => expr_contains_intrinsic_code(inner),
         Expr::IntLit(_, _)
         | Expr::FloatLit(_, _)
         | Expr::DurationLit(_, _)
@@ -2890,6 +2894,14 @@ fn collect_expr_explicit_type_arg_actions(
         | Expr::IntrinsicExpr { .. }
         // Language 5, Sprint 2: nameof has no type arguments to surface.
         | Expr::NameOf { .. } => {}
+        // Language 5, Sprint 3: `ref expr` recurses into the inner expr.
+        Expr::RefOf { inner, .. } => collect_expr_explicit_type_arg_actions(
+            inner,
+            None,
+            callable_signatures,
+            selection_span,
+            actions,
+        ),
         Expr::StringInterp { parts, .. } => {
             for part in parts {
                 if let StringPart::Expr(expr) = part {

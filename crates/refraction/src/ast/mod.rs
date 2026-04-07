@@ -351,6 +351,9 @@ pub enum Stmt {
         name_span: Span,
         ty: Option<TypeRef>,
         init: Expr,
+        /// v5 Sprint 3: `val ref name = ref expr` declares a `ref readonly`
+        /// local. The init expression must be an `Expr::RefOf`.
+        is_ref: bool,
         span: Span,
     },
     VarDecl {
@@ -358,6 +361,8 @@ pub enum Stmt {
         name_span: Span,
         ty: Option<TypeRef>,
         init: Option<Expr>,
+        /// v5 Sprint 3: `var ref name = ref expr` declares a `ref` local.
+        is_ref: bool,
         span: Span,
     },
     Assignment {
@@ -403,6 +408,10 @@ pub enum Stmt {
     },
     Return {
         value: Option<Expr>,
+        /// v5 Sprint 3: `return ref expr` — only valid inside a function
+        /// declared with a `ref` return type. The value must be an
+        /// addressable expression.
+        is_ref: bool,
         span: Span,
     },
     Wait {
@@ -778,6 +787,14 @@ pub enum Expr {
     NameOf {
         /// Dot-separated path components, e.g. `["player", "hp"]`.
         path: Vec<String>,
+        span: Span,
+    },
+    /// v5 Sprint 3: `ref expr` — used as the init expression of a
+    /// `val ref` / `var ref` declaration and as the operand of `ref return`.
+    /// The inner expression must be addressable (a field or local). The
+    /// lowering pass emits `ref expr` verbatim in the matching C# slot.
+    RefOf {
+        inner: Box<Expr>,
         span: Span,
     },
 }

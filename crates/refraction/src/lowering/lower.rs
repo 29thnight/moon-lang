@@ -1900,7 +1900,8 @@ fn expr_span(expr: &Expr) -> Span {
         | Expr::ListLit { span, .. }
         | Expr::MapLit { span, .. }
         | Expr::Await { span, .. }
-        | Expr::NameOf { span, .. } => *span,
+        | Expr::NameOf { span, .. }
+        | Expr::RefOf { span, .. } => *span,
     }
 }
 
@@ -1937,8 +1938,16 @@ fn lower_stmt_with_context(
 ) -> CsStmt {
     let source_span = Some(stmt_span(stmt));
     match stmt {
-        Stmt::ValDecl { name, ty, init, .. } => {
-            let cs_ty = ty.as_ref().map(|t| lower_type(t)).unwrap_or("var".into());
+        Stmt::ValDecl { name, ty, init, is_ref, .. } => {
+            // Language 5, Sprint 3: `val ref name = ref expr` lowers to
+            // `ref readonly T name = ref expr;` in C#. The init `Expr::RefOf`
+            // produces `ref expr` text directly.
+            let mut cs_ty = ty.as_ref().map(|t| lower_type(t)).unwrap_or("var".into());
+            if *is_ref && cs_ty != "var" {
+                cs_ty = format!("ref readonly {}", cs_ty);
+            } else if *is_ref {
+                cs_ty = "ref readonly var".into();
+            }
             CsStmt::VarDecl {
                 ty: cs_ty,
                 name: name.clone(),
@@ -1946,8 +1955,17 @@ fn lower_stmt_with_context(
                 source_span,
             }
         }
-        Stmt::VarDecl { name, ty, init, .. } => {
-            let cs_ty = ty.as_ref().map(|t| lower_type(t)).unwrap_or("var".into());
+        Stmt::VarDecl { name, ty, init, is_ref, .. } => {
+            // Language 5, Sprint 3: `var ref name = ref expr` lowers to
+            // `ref T name = ref expr;`. The trailing-`= default` fallback
+            // is preserved for the standard `var name: T` form so existing
+            // tests stay green.
+            let mut cs_ty = ty.as_ref().map(|t| lower_type(t)).unwrap_or("var".into());
+            if *is_ref && cs_ty != "var" {
+                cs_ty = format!("ref {}", cs_ty);
+            } else if *is_ref {
+                cs_ty = "ref var".into();
+            }
             let init_str = init
                 .as_ref()
                 .map(|expr| lower_expr_with_expected_type(expr, ty.as_ref(), callable_signatures))
@@ -3020,6 +3038,11 @@ fn lower_expr_with_expected_type(
         // expression. The path is rendered with dots between segments and
         // the result is enclosed in `nameof(...)`.
         Expr::NameOf { path, .. } => format!("nameof({})", path.join(".")),
+        // Language 5, Sprint 3: `ref expr` — emits the C# ref-of operator.
+        Expr::RefOf { inner, .. } => {
+            let inner_str = lower_expr_with_expected_type(inner, None, callable_signatures);
+            format!("ref {}", inner_str)
+        }
     }
 }
 

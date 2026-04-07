@@ -1359,6 +1359,39 @@ hello world
         );
     }
 
+    // Language 5, Sprint 3: `val ref` declares a `ref readonly` local
+    // initialized with `ref expr`.
+    #[test]
+    fn test_val_ref_lowers_to_ref_readonly_local() {
+        let src = r#"component Probe : MonoBehaviour {
+  func go() {
+    val ref pos: Vector3 = ref transform.position
+  }
+}"#;
+        let output = compile(src);
+        assert!(
+            output.contains("ref readonly Vector3 pos = ref transform.position"),
+            "expected ref readonly local: {}",
+            output
+        );
+    }
+
+    // `var ref name = ref expr` lowers to a mutable `ref` local.
+    #[test]
+    fn test_var_ref_lowers_to_ref_local() {
+        let src = r#"component Probe : MonoBehaviour {
+  func go() {
+    var ref pos: Vector3 = ref transform.position
+  }
+}"#;
+        let output = compile(src);
+        assert!(
+            output.contains("ref Vector3 pos = ref transform.position"),
+            "expected ref local: {}",
+            output
+        );
+    }
+
     // Language 5, Sprint 3: a `bind to` site registers a continuous push
     // callback so future setter writes propagate to every target.
     #[test]

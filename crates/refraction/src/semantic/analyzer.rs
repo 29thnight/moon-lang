@@ -1098,6 +1098,7 @@ impl Analyzer {
                 ty,
                 init,
                 span,
+                ..
             } => {
                 let declared_ty = if let Some(t) = ty {
                     let dt = self.resolve_typeref(t);
@@ -1131,6 +1132,7 @@ impl Analyzer {
                 ty,
                 init,
                 span,
+                ..
             } => {
                 let declared_ty = if let Some(t) = ty {
                     let dt = self.resolve_typeref(t);
@@ -1886,6 +1888,10 @@ impl Analyzer {
             // in some scope (no E???) — for now we accept anything and
             // just return `String`.
             Expr::NameOf { .. } => PrismType::Primitive(PrimitiveKind::String),
+            // Language 5, Sprint 3: `ref expr` — type is the inner
+            // expression's type. Reference-ness is tracked at the
+            // declaration level, not in the type system today.
+            Expr::RefOf { inner, .. } => self.analyze_expr(inner),
         }
     }
 

@@ -989,6 +989,8 @@ fn collect_expr_type_references(
         | Expr::This(..)
         // Language 5, Sprint 2: nameof has no nested type references.
         | Expr::NameOf { .. } => {}
+        // Language 5, Sprint 3: `ref expr` recurses into the inner expr.
+        Expr::RefOf { inner, .. } => collect_expr_type_references(path, container_name, inner, references),
         Expr::StringInterp { parts, .. } => {
             for part in parts {
                 if let StringPart::Expr(expr) = part {
