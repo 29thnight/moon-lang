@@ -184,6 +184,16 @@
     "function-declaration": {
       "patterns": [
         {
+          "comment": "v4: `static func name` (with optional visibility prefix)",
+          "match": "\\b(public|private|protected)?\\s*(static)\\s+(func)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "keyword.other.prsm" },
+            "3": { "name": "keyword.other.prsm" },
+            "4": { "name": "entity.name.function.prsm" }
+          }
+        },
+        {
           "comment": "v4: `async func name`",
           "match": "\\b(async)\\s+(func)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
           "captures": {
@@ -264,7 +274,17 @@
           }
         },
         {
-          "comment": "v3: `serialize`/`require`/`optional`/`child`/`parent` + name",
+          "comment": "v4: `static val/var/const/fixed name` (with optional visibility prefix)",
+          "match": "\\b(public|private|protected)?\\s*(static)\\s+(val|var|const|fixed)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": { "name": "keyword.other.prsm" },
+            "2": { "name": "keyword.other.prsm" },
+            "3": { "name": "keyword.other.prsm" },
+            "4": { "name": "variable.other.member.prsm" }
+          }
+        },
+        {
+          "comment": "v3: `serialize`/`require`/`optional`/`child`/`parent` + name. const, val, var, fixed are mutually exclusive Mutability values, not modifiers — `const var` is a parse error in PrSM.",
           "match": "\\b(serialize|require|optional|child|parent|val|var|const|fixed)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
           "captures": {
             "1": { "name": "keyword.other.prsm" },
@@ -320,7 +340,7 @@
       "patterns": [
         { "name": "keyword.control.import.prsm", "match": "\\busing\\b" },
         { "name": "keyword.other.prsm", "match": "\\b(component|singleton|asset|class|enum|data|interface|struct|typealias|attribute|extend)\\b" },
-        { "name": "keyword.other.prsm", "match": "\\b(serialize|require|optional|child|parent|pool|public|private|protected)\\b" },
+        { "name": "keyword.other.prsm", "match": "\\b(serialize|require|optional|child|parent|pool|public|private|protected|static)\\b" },
         { "name": "keyword.other.prsm", "match": "\\b(val|var|const|fixed|func|coroutine|override|return|intrinsic)\\b" },
         {
           "comment": "v4 type-system / inheritance modifiers",

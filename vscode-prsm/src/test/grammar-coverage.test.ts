@@ -62,6 +62,7 @@ const v4Keywords: ReadonlyArray<string> = [
     'pool',
     'singleton',
     // Storage modifiers
+    'static',
     'const',
     'fixed',
 ];
@@ -180,4 +181,31 @@ test('grammar recognizes v4/v5 composite declaration headers', () => {
             `composite header pattern '${expected}' missing from grammar`,
         );
     }
+});
+
+// === static + storage class composite forms (v4 §3) =========================
+
+test('grammar recognizes static + func / static + val|var|const|fixed forms', () => {
+    // `static func name`, `static val name`, `static const name`, etc.
+    // should all colorize every keyword in the prefix, not just the
+    // first one. The composite rules live in function-declaration
+    // (for func) and field-declaration (for storage classes).
+    assert.ok(
+        grammarText.includes('static)\\\\s+(func'),
+        'static + func composite pattern missing — `static func name` would only colorize one token',
+    );
+    assert.ok(
+        grammarText.includes('static)\\\\s+(val|var|const|fixed'),
+        'static + storage class composite pattern missing — `static const NAME` would only colorize one token',
+    );
+});
+
+test('grammar declares static as a top-level keyword', () => {
+    // The composite rules above handle `static <something>` forms,
+    // but `static` on its own (e.g. when typing midway) should still
+    // be tagged as a keyword by the all-keywords fallback.
+    assert.ok(
+        grammarText.includes('public|private|protected|static'),
+        'static must appear in the all-keywords visibility/storage modifier rule',
+    );
 });
