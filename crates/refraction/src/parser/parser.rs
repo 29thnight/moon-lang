@@ -3189,27 +3189,116 @@ impl Parser {
         self.expect(&TokenKind::LParen)?;
         let mut args = Vec::new();
         while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
-            // Check for named argument: name = expr
-            let arg = if let TokenKind::Identifier(name) = self.peek().clone() {
-                let save = self.pos;
-                self.advance();
-                if self.eat(&TokenKind::Eq) {
-                    let value = self.parse_expr()?;
-                    Arg { name: Some(name), value }
-                } else {
-                    self.pos = save;
-                    let value = self.parse_expr()?;
-                    Arg { name: None, value }
-                }
-            } else {
-                let value = self.parse_expr()?;
-                Arg { name: None, value }
-            };
+            let arg = self.parse_call_arg()?;
             args.push(arg);
             if !self.eat(&TokenKind::Comma) { break; }
         }
         self.expect(&TokenKind::RParen)?;
         Ok((type_args, args))
+    }
+
+    /// Parse a single call-site argument (Language 5, Sprint 2). Supports:
+    ///
+    /// * `expr` — positional
+    /// * `name: expr` / `name = expr` — named (Kotlin `:` and legacy `=`)
+    /// * `ref expr` — pass by reference
+    /// * `out expr` — out argument with an existing variable
+    /// * `out val name` / `out var name` — out declaration expression
+    /// * `out _` — out discard
+    fn parse_call_arg(&mut self) -> Result<Arg, ParseError> {
+        // ── ref / out modifiers ────────────────────────────────────
+        if self.check_contextual("ref") {
+            self.advance();
+            let value = self.parse_expr()?;
+            return Ok(Arg {
+                name: None,
+                call_modifier: ArgMod::Ref,
+                value,
+            });
+        }
+        if self.check_contextual("out") {
+            self.advance();
+            // `out _` discard
+            if self.check_contextual("_") {
+                let span = self.peek_span();
+                self.advance();
+                return Ok(Arg {
+                    name: None,
+                    call_modifier: ArgMod::OutDiscard,
+                    value: Expr::Ident("_".into(), span),
+                });
+            }
+            // `out val name` / `out var name` declaration expression
+            if self.check(&TokenKind::Val) || self.check(&TokenKind::Var) {
+                self.advance();
+                let (name, name_span) = self.expect_ident()?;
+                return Ok(Arg {
+                    name: None,
+                    call_modifier: ArgMod::OutDecl(name.clone()),
+                    value: Expr::Ident(name, name_span),
+                });
+            }
+            // Plain `out expr`
+            let value = self.parse_expr()?;
+            return Ok(Arg {
+                name: None,
+                call_modifier: ArgMod::Out,
+                value,
+            });
+        }
+
+        // ── named argument (legacy `name = expr`, v5 `name: expr`) ──
+        if let TokenKind::Identifier(name) = self.peek().clone() {
+            let save = self.pos;
+            self.advance();
+            if self.eat(&TokenKind::Eq) {
+                let value = self.parse_expr()?;
+                return Ok(Arg {
+                    name: Some(name),
+                    call_modifier: ArgMod::None,
+                    value,
+                });
+            }
+            // `name: expr` — but only when followed by something that
+            // can start an expression. The `:` token is also used for
+            // type annotations and map literals, so be conservative.
+            if self.check(&TokenKind::Colon) {
+                let next_kind = self.tokens.get(self.pos + 1).map(|t| t.kind.clone());
+                let starts_expr = matches!(
+                    next_kind,
+                    Some(TokenKind::Identifier(_))
+                        | Some(TokenKind::IntLiteral(_))
+                        | Some(TokenKind::FloatLiteral(_))
+                        | Some(TokenKind::StringLiteral(_))
+                        | Some(TokenKind::StringStart(_))
+                        | Some(TokenKind::BoolTrue)
+                        | Some(TokenKind::BoolFalse)
+                        | Some(TokenKind::Null)
+                        | Some(TokenKind::This)
+                        | Some(TokenKind::LParen)
+                        | Some(TokenKind::LBracket)
+                        | Some(TokenKind::Minus)
+                        | Some(TokenKind::Bang)
+                );
+                if starts_expr {
+                    self.advance(); // consume ':'
+                    let value = self.parse_expr()?;
+                    return Ok(Arg {
+                        name: Some(name),
+                        call_modifier: ArgMod::None,
+                        value,
+                    });
+                }
+            }
+            self.pos = save;
+        }
+
+        let value = self.parse_expr()?;
+        Ok(Arg {
+            name: None,
+            call_modifier: ArgMod::None,
+            value,
+        })
     }
 
     fn try_parse_generic_call(&mut self) -> Result<(Vec<TypeRef>, Vec<Arg>), ParseError> {
@@ -3224,8 +3313,8 @@ impl Parser {
         self.expect(&TokenKind::LParen)?;
         let mut args = Vec::new();
         while !self.check(&TokenKind::RParen) && !self.check(&TokenKind::Eof) {
-            let value = self.parse_expr()?;
-            args.push(Arg { name: None, value });
+            let arg = self.parse_call_arg()?;
+            args.push(arg);
             if !self.eat(&TokenKind::Comma) { break; }
         }
         self.expect(&TokenKind::RParen)?;
@@ -3247,6 +3336,15 @@ impl Parser {
             TokenKind::If => self.parse_if_expr(),
             TokenKind::When => self.parse_when_expr(),
             TokenKind::Identifier(name) => {
+                // Language 5, Sprint 2: contextual `nameof(target)` expression.
+                // Recognized only when immediately followed by `(`. The parsed
+                // path is a dotted identifier sequence: `nameof(player.hp)`.
+                if name == "nameof" {
+                    let next_kind = self.tokens.get(self.pos + 1).map(|t| t.kind.clone());
+                    if next_kind == Some(TokenKind::LParen) {
+                        return self.parse_nameof_expr(span);
+                    }
+                }
                 self.advance();
                 Ok(Expr::Ident(name, span))
             }
@@ -3284,6 +3382,28 @@ impl Parser {
             TokenKind::LBracket => self.parse_list_literal(),
             _ => Err(self.error(format!("Expected expression, found {:?}", self.peek()))),
         }
+    }
+
+    /// Parse `nameof(target)` — Language 5, Sprint 2.
+    ///
+    /// The target must be a dotted identifier path (no method calls,
+    /// generics, or expressions). The parsed path is later joined with
+    /// `.` and emitted as a verbatim C# `nameof(...)` expression.
+    fn parse_nameof_expr(&mut self, start: Span) -> Result<Expr, ParseError> {
+        self.advance(); // consume 'nameof'
+        self.expect(&TokenKind::LParen)?;
+        let mut path = Vec::new();
+        let (first, _) = self.expect_ident()?;
+        path.push(first);
+        while self.eat(&TokenKind::Dot) {
+            let (next, _) = self.expect_ident()?;
+            path.push(next);
+        }
+        self.expect(&TokenKind::RParen)?;
+        Ok(Expr::NameOf {
+            path,
+            span: Span { start: start.start, end: self.peek_span().end },
+        })
     }
 
     /// Parse a `[` expression — list literal `[1, 2, 3]` or empty `[]`.
@@ -3659,6 +3779,33 @@ impl Parser {
 
     fn parse_param(&mut self) -> Result<Param, ParseError> {
         let start = self.peek_span();
+        // v5 Sprint 2: optional `ref` / `out` / `vararg` modifier in front
+        // of the parameter name. The modifier and the vararg flag are
+        // contextual — they must be recognized only as identifiers in
+        // parameter position so they don't break existing PrSM code that
+        // uses these names as ordinary identifiers elsewhere.
+        let mut modifier = ParamMod::None;
+        let mut is_vararg = false;
+        // The modifier must be followed by an identifier and a colon
+        // (`ref name:`) — peek ahead to disambiguate from a parameter
+        // literally named `ref` / `out` / `vararg`.
+        let next_after = |this: &Self| -> TokenKind {
+            let mut p = this.pos + 1;
+            while p < this.tokens.len() && this.tokens[p].kind == TokenKind::Newline {
+                p += 1;
+            }
+            this.tokens.get(p).map(|t| t.kind.clone()).unwrap_or(TokenKind::Eof)
+        };
+        if self.check_contextual("ref") && matches!(next_after(self), TokenKind::Identifier(_)) {
+            self.advance();
+            modifier = ParamMod::Ref;
+        } else if self.check_contextual("out") && matches!(next_after(self), TokenKind::Identifier(_)) {
+            self.advance();
+            modifier = ParamMod::Out;
+        } else if self.check_contextual("vararg") && matches!(next_after(self), TokenKind::Identifier(_)) {
+            self.advance();
+            is_vararg = true;
+        }
         let (name, name_span) = self.expect_ident()?;
         self.expect(&TokenKind::Colon)?;
         let ty = self.parse_type()?;
@@ -3672,6 +3819,8 @@ impl Parser {
             name_span,
             ty,
             default,
+            modifier,
+            is_vararg,
             span: Span { start: start.start, end: self.peek_span().end },
         })
     }
@@ -3920,7 +4069,8 @@ impl Expr {
             | Expr::Tuple { span, .. }
             | Expr::ListLit { span, .. }
             | Expr::MapLit { span, .. }
-            | Expr::Await { span, .. } => *span,
+            | Expr::Await { span, .. }
+            | Expr::NameOf { span, .. } => *span,
         }
     }
 }

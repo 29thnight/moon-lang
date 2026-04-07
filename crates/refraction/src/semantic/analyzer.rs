@@ -1840,6 +1840,11 @@ impl Analyzer {
                 // treats it as `var`.
                 PrismType::External("var".into())
             }
+            // Language 5, Sprint 2: nameof — yields a string literal at
+            // compile time. We validate that the leaf identifier exists
+            // in some scope (no E???) — for now we accept anything and
+            // just return `String`.
+            Expr::NameOf { .. } => PrismType::Primitive(PrimitiveKind::String),
         }
     }
 

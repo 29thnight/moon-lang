@@ -111,10 +111,11 @@ fn emit_member(out: &mut String, member: &CsMember, indent: usize, _is_enum: boo
                 out.push_str(&format!("{}{}\n", pad, attr));
             }
             let params_str: Vec<String> = params.iter().map(|p| {
+                let prefix = p.modifier.prefix();
                 if let Some(def) = &p.default {
-                    format!("{} {} = {}", p.ty, p.name, def)
+                    format!("{}{} {} = {}", prefix, p.ty, p.name, def)
                 } else {
-                    format!("{} {}", p.ty, p.name)
+                    format!("{}{} {}", prefix, p.ty, p.name)
                 }
             }).collect();
             let where_suffix = if where_clauses.is_empty() {

@@ -2013,7 +2013,10 @@ fn collect_used_namespaces_for_expr(expr: &Expr, used_namespaces: &mut HashSet<S
         | Expr::BoolLit(_, _)
         | Expr::Null(_)
         | Expr::Ident(_, _)
-        | Expr::This(_) => {}
+        | Expr::This(_)
+        // Language 5, Sprint 2: `nameof(x)` references no namespace beyond
+        // the surrounding type — it's emitted verbatim.
+        | Expr::NameOf { .. } => {}
         Expr::StringInterp { parts, .. } => {
             for part in parts {
                 if let StringPart::Expr(expr) = part {
@@ -2460,7 +2463,9 @@ fn expr_contains_intrinsic_code(expr: &Expr) -> bool {
         | Expr::BoolLit(_, _)
         | Expr::Null(_)
         | Expr::Ident(_, _)
-        | Expr::This(_) => false,
+        | Expr::This(_)
+        // Language 5, Sprint 2: nameof can never embed an intrinsic block.
+        | Expr::NameOf { .. } => false,
     }
 }
 
@@ -2882,7 +2887,9 @@ fn collect_expr_explicit_type_arg_actions(
         | Expr::Null(_)
         | Expr::Ident(_, _)
         | Expr::This(_)
-        | Expr::IntrinsicExpr { .. } => {}
+        | Expr::IntrinsicExpr { .. }
+        // Language 5, Sprint 2: nameof has no type arguments to surface.
+        | Expr::NameOf { .. } => {}
         Expr::StringInterp { parts, .. } => {
             for part in parts {
                 if let StringPart::Expr(expr) = part {

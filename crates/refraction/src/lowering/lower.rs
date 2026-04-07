@@ -477,7 +477,7 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                 ctor_params.push(CsParam {
                     ty: cs_ty.clone(),
                     name: f.name.clone(),
-                    default: None,
+                    default: None, modifier: CsParamMod::None,
                 });
                 ctor_body.push(CsStmt::Assignment {
                     target: format!("this.{}", f.name),
@@ -596,7 +596,7 @@ fn lower_struct(name: &str, fields: &[Param], members: &[Member]) -> CsClass {
         .map(|f| CsParam {
             ty: lower_type(&f.ty),
             name: f.name.clone(),
-            default: None,
+            default: None, modifier: CsParamMod::None,
         })
         .collect();
     let ctor_body: Vec<CsStmt> = fields
@@ -662,7 +662,7 @@ fn lower_expr_helper_member() -> CsMember {
         params: vec![CsParam {
             ty: "System.Func<T>".into(),
             name: "thunk".into(),
-            default: None,
+            default: None, modifier: CsParamMod::None,
         }],
         where_clauses: vec![],
         body: vec![CsStmt::Return(Some("thunk()".into()), None)],
@@ -723,7 +723,7 @@ fn lower_data_class_constructor(name: &str, fields: &[Param]) -> CsMember {
         .map(|field| CsParam {
             ty: lower_type(&field.ty),
             name: field.name.clone(),
-            default: None,
+            default: None, modifier: CsParamMod::None,
         })
         .collect();
 
@@ -775,7 +775,7 @@ fn lower_data_class_equals(name: &str, fields: &[Param]) -> CsMember {
         params: vec![CsParam {
             ty: "object".into(),
             name: "obj".into(),
-            default: None,
+            default: None, modifier: CsParamMod::None,
         }],
         where_clauses: vec![],
         body: vec![
@@ -900,6 +900,7 @@ fn lower_parameterized_enum_extensions(name: &str, params: &[EnumParam], entries
                 ty: format!("this {}", name),
                 name: "value".into(),
                 default: None,
+                modifier: CsParamMod::None,
             }],
             where_clauses: vec![],
             body: vec![CsStmt::Switch {
@@ -1378,16 +1379,40 @@ fn lower_awake(
     }
 }
 
+/// Language 5, Sprint 2: convert a PrSM `Param` (with optional `ref` /
+/// `out` / `vararg` modifiers and a default value) into a `CsParam` for
+/// emission. Centralized so every method/lifecycle/coroutine path picks
+/// up the modifiers consistently.
+///
+/// `vararg` parameters are mapped to `params T[]` — the element type is
+/// the lowered PrSM type, wrapped in a C# array suffix.
+fn cs_param_from(p: &Param) -> CsParam {
+    let mut ty = lower_type(&p.ty);
+    if p.is_vararg {
+        ty = format!("{}[]", ty);
+    }
+    CsParam {
+        ty,
+        name: p.name.clone(),
+        default: p.default.as_ref().map(lower_expr),
+        modifier: if p.is_vararg {
+            CsParamMod::Params
+        } else {
+            match p.modifier {
+                ParamMod::None => CsParamMod::None,
+                ParamMod::Ref => CsParamMod::Ref,
+                ParamMod::Out => CsParamMod::Out,
+            }
+        },
+    }
+}
+
 // ── Lifecycle lowering ──────────────────────────────────────────
 
 #[allow(dead_code)]
 fn lower_lifecycle(kind: LifecycleKind, params: &[Param], body_block: &Block) -> CsMember {
     let method_name = lifecycle_method_name(kind);
-    let cs_params: Vec<CsParam> = params.iter().map(|p| CsParam {
-        ty: lower_type(&p.ty),
-        name: p.name.clone(),
-        default: None,
-    }).collect();
+    let cs_params: Vec<CsParam> = params.iter().map(cs_param_from).collect();
     let body: Vec<CsStmt> = body_block.stmts.iter().map(|s| lower_stmt(s)).collect();
     CsMember::Method {
         attributes: vec![],
@@ -1408,11 +1433,7 @@ fn lower_lifecycle_with_ctx(
     ctx: &mut ComponentCtx,
 ) -> CsMember {
     let method_name = lifecycle_method_name(kind);
-    let cs_params: Vec<CsParam> = params.iter().map(|p| CsParam {
-        ty: lower_type(&p.ty),
-        name: p.name.clone(),
-        default: None,
-    }).collect();
+    let cs_params: Vec<CsParam> = params.iter().map(cs_param_from).collect();
     let body = lower_stmts_with_ctx(&body_block.stmts, ctx, None);
     CsMember::Method {
         attributes: vec![],
@@ -1456,9 +1477,7 @@ fn lower_func_member(m: &Member, callable_signatures: &HashMap<String, CallableS
             } else {
                 inner_ret.clone()
             };
-            let ps: Vec<CsParam> = params.iter().map(|p| CsParam {
-                ty: lower_type(&p.ty), name: p.name.clone(), default: None,
-            }).collect();
+            let ps: Vec<CsParam> = params.iter().map(cs_param_from).collect();
 
             let mut mods = lower_visibility(*visibility);
             if *is_static {
@@ -1483,7 +1502,7 @@ fn lower_func_member(m: &Member, callable_signatures: &HashMap<String, CallableS
                     mods,
                     ret,
                     cs_name,
-                    ps.iter().map(|p| format!("{} {}", p.ty, p.name)).collect::<Vec<_>>().join(", ")
+                    ps.iter().map(|p| format!("{}{} {}", p.modifier.prefix(), p.ty, p.name)).collect::<Vec<_>>().join(", ")
                 ));
             }
 
@@ -1544,14 +1563,7 @@ fn lower_intrinsic_func(
     span: Span,
 ) -> CsMember {
     let ret = return_ty.map(lower_type).unwrap_or("void".into());
-    let ps: Vec<CsParam> = params
-        .iter()
-        .map(|p| CsParam {
-            ty: lower_type(&p.ty),
-            name: p.name.clone(),
-            default: None,
-        })
-        .collect();
+    let ps: Vec<CsParam> = params.iter().map(cs_param_from).collect();
 
     CsMember::Method {
         attributes: vec![],
@@ -1566,14 +1578,7 @@ fn lower_intrinsic_func(
 }
 
 fn lower_intrinsic_coroutine(name: &str, params: &[Param], code: &str, span: Span) -> CsMember {
-    let ps: Vec<CsParam> = params
-        .iter()
-        .map(|p| CsParam {
-            ty: lower_type(&p.ty),
-            name: p.name.clone(),
-            default: None,
-        })
-        .collect();
+    let ps: Vec<CsParam> = params.iter().map(cs_param_from).collect();
 
     CsMember::Method {
         attributes: vec![],
@@ -1601,9 +1606,7 @@ fn lower_func_member_with_ctx(m: &Member, ctx: &mut ComponentCtx) -> CsMember {
             } else {
                 inner_ret.clone()
             };
-            let ps: Vec<CsParam> = params.iter().map(|p| CsParam {
-                ty: lower_type(&p.ty), name: p.name.clone(), default: None,
-            }).collect();
+            let ps: Vec<CsParam> = params.iter().map(cs_param_from).collect();
 
             let mut mods = lower_visibility(*visibility);
             if *is_static {
@@ -1628,7 +1631,7 @@ fn lower_func_member_with_ctx(m: &Member, ctx: &mut ComponentCtx) -> CsMember {
                     mods,
                     ret,
                     cs_name,
-                    ps.iter().map(|p| format!("{} {}", p.ty, p.name)).collect::<Vec<_>>().join(", ")
+                    ps.iter().map(|p| format!("{}{} {}", p.modifier.prefix(), p.ty, p.name)).collect::<Vec<_>>().join(", ")
                 ));
             }
 
@@ -1672,9 +1675,7 @@ fn lower_coroutine_with_ctx(
     return_ty: Option<&TypeRef>,
     ctx: &mut ComponentCtx,
 ) -> CsMember {
-    let ps: Vec<CsParam> = params.iter().map(|p| CsParam {
-        ty: lower_type(&p.ty), name: p.name.clone(), default: None,
-    }).collect();
+    let ps: Vec<CsParam> = params.iter().map(cs_param_from).collect();
 
     let cs_body = lower_stmts_with_ctx(&body.stmts, ctx, None);
 
@@ -1739,9 +1740,7 @@ fn lower_coroutine(
     body: &Block,
     callable_signatures: &HashMap<String, CallableSignature>,
 ) -> CsMember {
-    let ps: Vec<CsParam> = params.iter().map(|p| CsParam {
-        ty: lower_type(&p.ty), name: p.name.clone(), default: None,
-    }).collect();
+    let ps: Vec<CsParam> = params.iter().map(cs_param_from).collect();
 
     let cs_body: Vec<CsStmt> = body
         .stmts
@@ -1825,7 +1824,8 @@ fn expr_span(expr: &Expr) -> Span {
         | Expr::Tuple { span, .. }
         | Expr::ListLit { span, .. }
         | Expr::MapLit { span, .. }
-        | Expr::Await { span, .. } => *span,
+        | Expr::Await { span, .. }
+        | Expr::NameOf { span, .. } => *span,
     }
 }
 
@@ -2941,6 +2941,10 @@ fn lower_expr_with_expected_type(
             let inner_str = lower_expr_with_expected_type(inner, None, callable_signatures);
             format!("await {}", inner_str)
         }
+        // Language 5, Sprint 2: nameof(...) — emits a verbatim C# nameof
+        // expression. The path is rendered with dots between segments and
+        // the result is enclosed in `nameof(...)`.
+        Expr::NameOf { path, .. } => format!("nameof({})", path.join(".")),
     }
 }
 
@@ -2988,7 +2992,20 @@ fn lower_call_args(
         .enumerate()
         .map(|(index, arg)| {
             let expected_type = signature.and_then(|sig| sig.params.get(index));
-            lower_expr_with_expected_type(&arg.value, expected_type, callable_signatures)
+            // Language 5, Sprint 2: lower the argument with optional
+            // `ref` / `out` modifier and named-argument prefix.
+            let value = lower_expr_with_expected_type(&arg.value, expected_type, callable_signatures);
+            let body = match &arg.call_modifier {
+                ArgMod::None => value,
+                ArgMod::Ref => format!("ref {}", value),
+                ArgMod::Out => format!("out {}", value),
+                ArgMod::OutDecl(name) => format!("out var {}", name),
+                ArgMod::OutDiscard => "out _".to_string(),
+            };
+            match &arg.name {
+                Some(arg_name) => format!("{}: {}", arg_name, body),
+                None => body,
+            }
         })
         .collect()
 }
@@ -3254,12 +3271,13 @@ fn lower_extension(target_type: &TypeRef, members: &[Member]) -> (CsClass, Vec<C
                     ty: format!("this {}", target_cs),
                     name: "__self".into(),
                     default: None,
+                    modifier: CsParamMod::None,
                 }];
                 for p in params {
                     cs_params.push(CsParam {
                         ty: lower_type(&p.ty),
                         name: p.name.clone(),
-                        default: p.default.as_ref().map(|e| lower_expr(e)),
+                        default: p.default.as_ref().map(|e| lower_expr(e)), modifier: CsParamMod::None,
                     });
                 }
                 let cs_body = lower_func_body_ext(body, &HashMap::new(), true);
@@ -3282,6 +3300,7 @@ fn lower_extension(target_type: &TypeRef, members: &[Member]) -> (CsClass, Vec<C
                         ty: format!("this {}", target_cs),
                         name: "__self".into(),
                         default: None,
+                        modifier: CsParamMod::None,
                     }];
                     let cs_body = lower_func_body_ext_with_funcbody(getter_body, &HashMap::new(), true);
                     cs_members.push(CsMember::Method {
@@ -3579,13 +3598,13 @@ fn lower_operator_member(
         let mut cs_params = vec![CsParam {
             ty: enclosing_type.into(),
             name: "left".into(),
-            default: None,
+            default: None, modifier: CsParamMod::None,
         }];
         if let Some(first_param) = params.first() {
             cs_params.push(CsParam {
                 ty: lower_type(&first_param.ty),
                 name: first_param.name.clone(),
-                default: None,
+                default: None, modifier: CsParamMod::None,
             });
         }
         let cs_body = match body {
@@ -3614,8 +3633,8 @@ fn lower_operator_member(
                 return_ty: ret,
                 name: "operator !=".into(),
                 params: vec![
-                    CsParam { ty: enclosing_type.into(), name: "left".into(), default: None },
-                    CsParam { ty: params.first().map(|p| lower_type(&p.ty)).unwrap_or_else(|| enclosing_type.into()), name: params.first().map(|p| p.name.clone()).unwrap_or_else(|| "right".into()), default: None },
+                    CsParam { ty: enclosing_type.into(), name: "left".into(), default: None , modifier: CsParamMod::None},
+                    CsParam { ty: params.first().map(|p| lower_type(&p.ty)).unwrap_or_else(|| enclosing_type.into()), name: params.first().map(|p| p.name.clone()).unwrap_or_else(|| "right".into()), default: None , modifier: CsParamMod::None},
                 ],
                 where_clauses: vec![],
                 body: vec![CsStmt::Return(Some(format!("!(left == {})", params.first().map(|p| p.name.as_str()).unwrap_or("right"))), None)],
@@ -3631,8 +3650,8 @@ fn lower_operator_member(
                 return_ty: "bool".into(),
                 name: "operator >".into(),
                 params: vec![
-                    CsParam { ty: enclosing_type.into(), name: "left".into(), default: None },
-                    CsParam { ty: params.first().map(|p| lower_type(&p.ty)).unwrap_or_else(|| enclosing_type.into()), name: params.first().map(|p| p.name.clone()).unwrap_or_else(|| "right".into()), default: None },
+                    CsParam { ty: enclosing_type.into(), name: "left".into(), default: None , modifier: CsParamMod::None},
+                    CsParam { ty: params.first().map(|p| lower_type(&p.ty)).unwrap_or_else(|| enclosing_type.into()), name: params.first().map(|p| p.name.clone()).unwrap_or_else(|| "right".into()), default: None , modifier: CsParamMod::None},
                 ],
                 where_clauses: vec![],
                 body: vec![CsStmt::Return(Some(format!("!(left < {})", params.first().map(|p| p.name.as_str()).unwrap_or("right"))), None)],
@@ -4461,7 +4480,7 @@ fn lower_state_machine(
         modifiers: "private".into(),
         return_ty: "void".into(),
         name: enter_fn.clone(),
-        params: vec![CsParam { ty: enum_name.clone(), name: "state".into(), default: None }],
+        params: vec![CsParam { ty: enum_name.clone(), name: "state".into(), default: None , modifier: CsParamMod::None}],
         where_clauses: vec![],
         body: enter_body,
         source_span: None,
@@ -4495,7 +4514,7 @@ fn lower_state_machine(
         modifiers: "private".into(),
         return_ty: "void".into(),
         name: exit_fn.clone(),
-        params: vec![CsParam { ty: enum_name.clone(), name: "state".into(), default: None }],
+        params: vec![CsParam { ty: enum_name.clone(), name: "state".into(), default: None , modifier: CsParamMod::None}],
         where_clauses: vec![],
         body: exit_body,
         source_span: None,
@@ -4543,7 +4562,7 @@ fn lower_state_machine(
         modifiers: "public".into(),
         return_ty: "void".into(),
         name: transition_fn,
-        params: vec![CsParam { ty: "string".into(), name: "eventName".into(), default: None }],
+        params: vec![CsParam { ty: "string".into(), name: "eventName".into(), default: None , modifier: CsParamMod::None}],
         where_clauses: vec![],
         body: transition_body,
         source_span: None,
@@ -4595,12 +4614,12 @@ fn lower_command_member(
     let ctor_params: Vec<CsParam> = std::iter::once(CsParam {
         ty: owner_name.into(),
         name: "owner".into(),
-        default: None,
+        default: None, modifier: CsParamMod::None,
     })
     .chain(params.iter().map(|p| CsParam {
         ty: lower_type(&p.ty),
         name: p.name.clone(),
-        default: None,
+        default: None, modifier: CsParamMod::None,
     }))
     .collect();
     let mut ctor_body = vec![CsStmt::Assignment {
@@ -4698,11 +4717,7 @@ fn lower_command_member(
     };
 
     // Owner helper method: `public void MemberName(params) { new NameCommand(this, params).Execute(); }`
-    let helper_params: Vec<CsParam> = params.iter().map(|p| CsParam {
-        ty: lower_type(&p.ty),
-        name: p.name.clone(),
-        default: None,
-    }).collect();
+    let helper_params: Vec<CsParam> = params.iter().map(cs_param_from).collect();
     let ctor_arg_list: Vec<String> = std::iter::once("this".to_string())
         .chain(params.iter().map(|p| p.name.clone()))
         .collect();

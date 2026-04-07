@@ -765,6 +765,17 @@ pub enum Expr {
         expr: Box<Expr>,
         span: Span,
     },
+    /// `nameof(target)` — yields the source identifier of `target` as a
+    /// string literal at compile time. Path is a dotted reference like
+    /// `nameof(player.hp)` or `nameof(Player)`. The semantic analyzer
+    /// validates that the leaf identifier exists; lowering emits the
+    /// matching `nameof(...)` expression in C# verbatim.
+    /// (Language 5, Sprint 2)
+    NameOf {
+        /// Dot-separated path components, e.g. `["player", "hp"]`.
+        path: Vec<String>,
+        span: Span,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -775,8 +786,33 @@ pub enum StringPart {
 
 #[derive(Debug, Clone)]
 pub struct Arg {
+    /// Named argument: `instantiate(prefab, parent: rootTransform)`.
+    /// (v5 Sprint 2 enables the parser path; the AST field has existed.)
     pub name: Option<String>,
+    /// v5 Sprint 2: `ref` / `out` / `out val` / `out var` / `out _`
+    /// modifier on the argument. Lowered to the matching C# call-site
+    /// modifier.
+    pub call_modifier: ArgMod,
     pub value: Expr,
+}
+
+/// v5 Sprint 2: call-site modifier for an argument. Mirrors the C#
+/// `ref` / `out` keywords. `OutDecl` corresponds to PrSM `out val name`
+/// or `out var name`, lowered to C# `out var name` (declaration form).
+/// `OutDiscard` corresponds to `out _`, lowered to C# `out _`.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum ArgMod {
+    #[default]
+    None,
+    Ref,
+    Out,
+    /// `out val name` / `out var name` — declaration expression. The
+    /// inner `String` is the bound variable name; the outer expression
+    /// is `Expr::Ident(name, span)` so existing semantic checks treat it
+    /// uniformly.
+    OutDecl(String),
+    /// `out _` — discard the result.
+    OutDiscard,
 }
 
 // ── Types ────────────────────────────────────────────────────────
@@ -829,7 +865,24 @@ pub struct Param {
     pub name_span: Span,
     pub ty: TypeRef,
     pub default: Option<Expr>,
+    /// v5 Sprint 2: parameter passing mode — `ref`, `out`, or absent.
+    pub modifier: ParamMod,
+    /// v5 Sprint 2: `vararg` modifier (Kotlin-style `params T[]` in C#).
+    /// Only the last parameter of a function may be `vararg`.
+    pub is_vararg: bool,
     pub span: Span,
+}
+
+/// v5 Sprint 2: parameter passing mode for `ref` / `out` parameters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParamMod {
+    /// Standard pass-by-value parameter.
+    None,
+    /// `ref` — caller passes a writable reference; lowered to C# `ref T`.
+    Ref,
+    /// `out` — callee shall assign before all return paths; lowered to
+    /// C# `out T`. The semantic analyzer enforces E154.
+    Out,
 }
 
 #[derive(Debug, Clone)]

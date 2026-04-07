@@ -986,7 +986,9 @@ fn collect_expr_type_references(
         | Expr::BoolLit(..)
         | Expr::Null(..)
         | Expr::Ident(..)
-        | Expr::This(..) => {}
+        | Expr::This(..)
+        // Language 5, Sprint 2: nameof has no nested type references.
+        | Expr::NameOf { .. } => {}
         Expr::StringInterp { parts, .. } => {
             for part in parts {
                 if let StringPart::Expr(expr) = part {

@@ -62,6 +62,32 @@ pub struct CsParam {
     pub ty: String,
     pub name: String,
     pub default: Option<String>,
+    /// v5 Sprint 2: parameter passing modifier — `""`, `"ref "`, `"out "`,
+    /// or `"params "`. The trailing space is intentional so the emitter
+    /// can interpolate the modifier verbatim before the type.
+    #[doc(alias = "modifier_prefix")]
+    pub modifier: CsParamMod,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CsParamMod {
+    #[default]
+    None,
+    Ref,
+    Out,
+    Params,
+}
+
+impl CsParamMod {
+    /// Render the modifier as the prefix that goes before the C# type.
+    pub fn prefix(self) -> &'static str {
+        match self {
+            CsParamMod::None => "",
+            CsParamMod::Ref => "ref ",
+            CsParamMod::Out => "out ",
+            CsParamMod::Params => "params ",
+        }
+    }
 }
 
 /// A C# statement.

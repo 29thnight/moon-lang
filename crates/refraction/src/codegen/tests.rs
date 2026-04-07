@@ -1426,6 +1426,97 @@ hello world
         assert!(output.contains("#endif"), "expected #endif: {}", output);
     }
 
+    // ── Language 5, Sprint 2 ──────────────────────────────────────
+
+    // `out` parameter on a func and `out val name` declaration argument.
+    #[test]
+    fn test_out_param_and_out_val_call() {
+        let src = r#"component Probe : MonoBehaviour {
+  func tryParse(input: String, out value: Int): Bool {
+    intrinsic { return int.TryParse(input, out value); }
+  }
+  func go() {
+    if tryParse("42", out val parsed) {
+      log("got " + parsed)
+    }
+  }
+}"#;
+        let output = compile(src);
+        assert!(
+            output.contains("out int value"),
+            "expected out parameter declaration: {}",
+            output
+        );
+        assert!(
+            output.contains("out var parsed"),
+            "expected out var call argument: {}",
+            output
+        );
+    }
+
+    // `vararg` parameter — lowers to `params T[]`.
+    #[test]
+    fn test_vararg_parameter_lowers_to_params_array() {
+        let src = r#"component Logger : MonoBehaviour {
+  func log(vararg messages: String) {
+  }
+}"#;
+        let output = compile(src);
+        assert!(
+            output.contains("params string[] messages"),
+            "expected params string[] vararg lowering: {}",
+            output
+        );
+    }
+
+    // Default parameter values forward to C# default expressions.
+    #[test]
+    fn test_default_param_value_lowers_to_csharp() {
+        let src = r#"component Spawn : MonoBehaviour {
+  func make(prefab: GameObject, count: Int = 3): Int {
+    return count
+  }
+}"#;
+        let output = compile(src);
+        assert!(
+            output.contains("int count = 3"),
+            "expected default value in lowered signature: {}",
+            output
+        );
+    }
+
+    // Named arguments at the call site (Kotlin `:` form).
+    #[test]
+    fn test_named_argument_kotlin_colon() {
+        let src = r#"component Spawn : MonoBehaviour {
+  func make(prefab: Int, count: Int = 1): Int { return count }
+  func go() {
+    val n = make(prefab: 0, count: 5)
+  }
+}"#;
+        let output = compile(src);
+        assert!(
+            output.contains("count: 5"),
+            "expected named argument in lowered call: {}",
+            output
+        );
+    }
+
+    // `nameof(target)` — emits a verbatim C# `nameof(target)` expression.
+    #[test]
+    fn test_nameof_emits_csharp_nameof() {
+        let src = r#"component Player : MonoBehaviour {
+  var hp: Int = 100
+  func tag(): String = nameof(hp)
+}"#;
+        let output = compile(src);
+        assert!(
+            output.contains("nameof(hp)"),
+            "expected lowered nameof: {}",
+            output
+        );
+    }
+
     // `#if ios && !editor` block — boolean operators on PrSM symbols.
     #[test]
     fn test_preprocessor_combined_condition_lowers_operators() {
