@@ -594,8 +594,8 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                 vec![],
             )
         }
-        Decl::Struct { name, fields, members, .. } => {
-            (lower_struct(name, fields, members), vec![])
+        Decl::Struct { name, fields, members, is_ref, .. } => {
+            (lower_struct(name, fields, members, *is_ref), vec![])
         }
         Decl::Extension { target_type, members, .. } => {
             lower_extension(target_type, members)
@@ -635,7 +635,7 @@ fn lower_data_class(name: &str, fields: &[Param]) -> CsClass {
     }
 }
 
-fn lower_struct(name: &str, fields: &[Param], members: &[Member]) -> CsClass {
+fn lower_struct(name: &str, fields: &[Param], members: &[Member], is_ref: bool) -> CsClass {
     let mut cs_members = Vec::new();
     let callable_signatures = collect_callable_signatures(members);
 
@@ -702,9 +702,15 @@ fn lower_struct(name: &str, fields: &[Param], members: &[Member]) -> CsClass {
         }
     }
 
+    // v5 (deferred): `ref struct Name(...)` lowers to `public ref struct`.
+    let modifiers = if is_ref {
+        "public ref struct".to_string()
+    } else {
+        "public struct".to_string()
+    };
     CsClass {
         attributes: vec![],
-        modifiers: "public struct".into(),
+        modifiers,
         name: name.into(),
         base_class: None,
         interfaces: vec![],
@@ -2012,7 +2018,8 @@ fn expr_span(expr: &Expr) -> Span {
         | Expr::RefOf { span, .. }
         | Expr::SafeIndexAccess { span, .. }
         | Expr::ThrowExpr { span, .. }
-        | Expr::With { span, .. } => *span,
+        | Expr::With { span, .. }
+        | Expr::StackAlloc { span, .. } => *span,
     }
 }
 
@@ -2990,6 +2997,23 @@ fn lower_expr_with_expected_type(
             }
         }
         Expr::IndexAccess { receiver, index, .. } => {
+            // v5 (deferred): when the index is a `Range` expression
+            // (`arr[1..5]`), emit C# range slicing syntax `arr[1..5]`.
+            // C# 8 ranges work directly on `Span<T>`, `T[]`, and
+            // `string`, so the same lowering covers every case.
+            if let Expr::Range { start, end, inclusive, .. } = &**index {
+                let recv = lower_expr_with_expected_type(receiver, None, callable_signatures);
+                let lo = lower_expr_with_expected_type(start, None, callable_signatures);
+                let hi = lower_expr_with_expected_type(end, None, callable_signatures);
+                // C# `..` is exclusive on the upper bound, so an
+                // inclusive PrSM range `1..=5` becomes `1..(5 + 1)`.
+                let hi_text = if *inclusive {
+                    format!("({} + 1)", hi)
+                } else {
+                    hi
+                };
+                return format!("{}[{}..{}]", recv, lo, hi_text);
+            }
             format!(
                 "{}[{}]",
                 lower_expr_with_expected_type(receiver, None, callable_signatures),
@@ -3229,6 +3253,15 @@ fn lower_expr_with_expected_type(
                 })
                 .collect();
             format!("{} with {{ {} }}", recv, pairs.join(", "))
+        }
+        // v5 (deferred): `stackalloc[Type](size)` lowers to C#
+        // `stackalloc Type[size]`. The result is a `Span<Type>` (or a
+        // `Type*` in unsafe contexts) — type inference is left to the
+        // C# compiler.
+        Expr::StackAlloc { element_ty, size, .. } => {
+            let ty = lower_type(element_ty);
+            let size_str = lower_expr_with_expected_type(size, None, callable_signatures);
+            format!("stackalloc {}[{}]", ty, size_str)
         }
     }
 }

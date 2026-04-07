@@ -1113,6 +1113,11 @@ fn collect_expr_type_references(
                 collect_expr_type_references(path, container_name, value, references);
             }
         }
+        // v5 (deferred): stackalloc — record the element type and recurse.
+        Expr::StackAlloc { element_ty, size, .. } => {
+            collect_type_references(path, container_name, element_ty, references);
+            collect_expr_type_references(path, container_name, size, references);
+        }
         Expr::StringInterp { parts, .. } => {
             for part in parts {
                 if let StringPart::Expr(expr) = part {

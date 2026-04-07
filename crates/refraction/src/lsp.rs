@@ -2335,6 +2335,12 @@ fn collect_used_namespaces_for_expr(expr: &Expr, used_namespaces: &mut HashSet<S
                 collect_used_namespaces_for_expr(value, used_namespaces);
             }
         }
+        // v5 (deferred): stackalloc — record the element type and recurse
+        // into the size expression.
+        Expr::StackAlloc { element_ty, size, .. } => {
+            collect_used_namespaces_for_type_ref(element_ty, used_namespaces);
+            collect_used_namespaces_for_expr(size, used_namespaces);
+        }
         Expr::StringInterp { parts, .. } => {
             for part in parts {
                 if let StringPart::Expr(expr) = part {
@@ -2788,6 +2794,8 @@ fn expr_contains_intrinsic_code(expr: &Expr) -> bool {
             expr_contains_intrinsic_code(receiver)
                 || updates.iter().any(|(_, v)| expr_contains_intrinsic_code(v))
         }
+        // v5 (deferred): stackalloc — only the size expression matters.
+        Expr::StackAlloc { size, .. } => expr_contains_intrinsic_code(size),
         Expr::IntLit(_, _)
         | Expr::FloatLit(_, _)
         | Expr::DurationLit(_, _)
@@ -3248,6 +3256,10 @@ fn collect_expr_explicit_type_arg_actions(
             for (_, value) in updates {
                 collect_expr_explicit_type_arg_actions(value, None, callable_signatures, selection_span, actions);
             }
+        }
+        // v5 (deferred): stackalloc — recurse into the size expression.
+        Expr::StackAlloc { size, .. } => {
+            collect_expr_explicit_type_arg_actions(size, None, callable_signatures, selection_span, actions);
         }
         Expr::StringInterp { parts, .. } => {
             for part in parts {

@@ -1392,6 +1392,58 @@ hello world
         );
     }
 
+    // ── Language 5 (deferred): stackalloc / ref struct / Span slice ──
+
+    // `stackalloc[Int](256)` lowers to C# `stackalloc int[256]`.
+    #[test]
+    fn test_stackalloc_lowers_to_csharp_stackalloc() {
+        let src = "component Probe : MonoBehaviour {\n  func go() {\n    val buf = stackalloc[Int](256)\n  }\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("stackalloc int[256]"),
+            "expected stackalloc int[256] in output: {}",
+            output
+        );
+    }
+
+    // `ref struct Slice<T>(...)` lowers with the `ref` modifier.
+    #[test]
+    fn test_ref_struct_lowers_with_ref_modifier() {
+        let src = "ref struct Slice(begin: Int, length: Int)";
+        let output = compile(src);
+        assert!(
+            output.contains("public ref struct Slice"),
+            "expected public ref struct Slice: {}",
+            output
+        );
+    }
+
+    // `arr[1..5]` lowers to a C# range slice. PrSM `..` is inclusive
+    // (matching Kotlin), so the lowered upper bound is `(5 + 1)`.
+    // `arr until 5` lowers to the half-open form `arr[1..5]`.
+    #[test]
+    fn test_range_index_access_lowers_to_csharp_range() {
+        let src = "component Probe : MonoBehaviour {\n  func go(arr: Array<Int>) {\n    val slice = arr[1..5]\n  }\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("arr[1..(5 + 1)]"),
+            "expected inclusive C# range slice: {}",
+            output
+        );
+    }
+
+    // `arr until 5` lowers to the half-open `arr[1..5]` form.
+    #[test]
+    fn test_until_index_access_lowers_to_half_open_range() {
+        let src = "component Probe : MonoBehaviour {\n  func go(arr: Array<Int>) {\n    val slice = arr[1 until 5]\n  }\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("arr[1..5]"),
+            "expected half-open C# range slice: {}",
+            output
+        );
+    }
+
     // ── Language 5 (deferred): positional/property patterns + with ──
 
     // Positional pattern with sub-patterns lowers to C# 9 case syntax.

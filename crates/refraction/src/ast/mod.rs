@@ -106,6 +106,11 @@ pub enum Decl {
     Struct {
         name: String,
         name_span: Span,
+        /// v5 (deferred): `ref struct Name(...)` — lowered to C#
+        /// `public ref struct Name { ... }`. The C# compiler then
+        /// enforces the standard ref-struct restrictions (no boxing,
+        /// no field of non-ref-struct, no implementing interfaces, …).
+        is_ref: bool,
         fields: Vec<Param>,
         members: Vec<Member>,
         span: Span,
@@ -882,6 +887,13 @@ pub enum Expr {
     With {
         receiver: Box<Expr>,
         updates: Vec<(String, Expr)>,
+        span: Span,
+    },
+    /// v5 (deferred): `stackalloc[Type](size)` — allocate a buffer on
+    /// the stack. Lowers to C# `stackalloc Type[size]`.
+    StackAlloc {
+        element_ty: TypeRef,
+        size: Box<Expr>,
         span: Span,
     },
 }

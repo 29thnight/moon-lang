@@ -1913,6 +1913,14 @@ impl Analyzer {
                 }
                 recv_ty
             }
+            // v5 (deferred): stackalloc result is `Span<T>`. We model
+            // it as an external `Span` with the element type so the
+            // rest of the analyzer treats it as a known type.
+            Expr::StackAlloc { element_ty, size, .. } => {
+                let _ = self.analyze_expr(size);
+                let elem = self.resolve_typeref(element_ty);
+                PrismType::Generic("Span".into(), vec![elem])
+            }
             // Language 5, Sprint 6: `arr?[index]` — type is the element
             // type of the indexed collection (best-effort: we just
             // recurse and use the receiver's type for now).

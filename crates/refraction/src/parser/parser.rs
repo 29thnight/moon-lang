@@ -229,6 +229,15 @@ impl Parser {
         // Collect annotations before declaration (for @targets on attribute)
         let annotations = self.parse_annotations()?;
 
+        // v5 (deferred): `ref struct Name(...)` — only recognized when
+        // the contextual `ref` is immediately followed by `struct`.
+        if self.check_contextual("ref")
+            && matches!(self.tokens.get(self.pos + 1).map(|t| t.kind.clone()), Some(TokenKind::Struct))
+        {
+            self.advance(); // consume 'ref'
+            return self.parse_struct_with(true);
+        }
+
         // v5 Sprint 5: optional `partial` modifier on a top-level
         // component or class declaration. The contextual keyword is
         // recognized only when the next token is `component` or `class`,
@@ -408,6 +417,10 @@ impl Parser {
     }
 
     fn parse_struct(&mut self) -> Result<Decl, ParseError> {
+        self.parse_struct_with(false)
+    }
+
+    fn parse_struct_with(&mut self, is_ref: bool) -> Result<Decl, ParseError> {
         let start = self.peek_span();
         self.advance(); // consume 'struct'
         let (name, name_span) = self.expect_ident()?;
@@ -440,6 +453,7 @@ impl Parser {
         Ok(Decl::Struct {
             name,
             name_span,
+            is_ref,
             fields,
             members,
             span: Span { start: start.start, end: self.peek_span().end },
@@ -3711,6 +3725,25 @@ impl Parser {
                 span: Span { start: span.start, end: self.peek_span().end },
             });
         }
+        // v5 (deferred): `stackalloc[Type](size)` primary expression.
+        // Recognized only as the contextual identifier `stackalloc`
+        // followed by `[`.
+        if self.check_contextual("stackalloc")
+            && matches!(self.tokens.get(self.pos + 1).map(|t| t.kind.clone()), Some(TokenKind::LBracket))
+        {
+            self.advance(); // consume 'stackalloc'
+            self.advance(); // consume '['
+            let element_ty = self.parse_type()?;
+            self.expect(&TokenKind::RBracket)?;
+            self.expect(&TokenKind::LParen)?;
+            let size = self.parse_expr()?;
+            self.expect(&TokenKind::RParen)?;
+            return Ok(Expr::StackAlloc {
+                element_ty,
+                size: Box::new(size),
+                span: Span { start: span.start, end: self.peek_span().end },
+            });
+        }
         match self.peek().clone() {
             TokenKind::IntLiteral(n) => { self.advance(); Ok(Expr::IntLit(n, span)) }
             TokenKind::FloatLiteral(n) => { self.advance(); Ok(Expr::FloatLit(n, span)) }
@@ -4462,7 +4495,8 @@ impl Expr {
             | Expr::RefOf { span, .. }
             | Expr::SafeIndexAccess { span, .. }
             | Expr::ThrowExpr { span, .. }
-            | Expr::With { span, .. } => *span,
+            | Expr::With { span, .. }
+            | Expr::StackAlloc { span, .. } => *span,
         }
     }
 }
