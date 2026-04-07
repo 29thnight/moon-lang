@@ -1528,6 +1528,26 @@ hello world
         );
     }
 
+    // Issue #28: positional pattern with binding variables and a guard
+    // (`Point(x, y) if x == y`) lowers to a C# switch expression with
+    // the captures and the `when` clause preserved. The previous
+    // lowering dropped both — emitting `Point _ => "diagonal"`.
+    #[test]
+    fn test_positional_pattern_with_binding_and_guard() {
+        let src = "component Probe : MonoBehaviour {\n  func describe(p: Point): String {\n    return when p {\n      Point(0, 0) => \"origin\"\n      Point(x, y) if x == y => \"diagonal\"\n      else => \"elsewhere\"\n    }\n  }\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("Point(var x, var y) when x == y => \"diagonal\""),
+            "expected `Point(var x, var y) when x == y` arm: {}",
+            output
+        );
+        assert!(
+            !output.contains("Point _ when"),
+            "lowered output must not drop the binding into `Point _`: {}",
+            output
+        );
+    }
+
     // Issue #25: a generic class field initializer `var items: List<T> = []`
     // lowers to `new List<T>()` (not `new List<object>()`). The previous
     // lowering dropped the type annotation and fell back to `object`

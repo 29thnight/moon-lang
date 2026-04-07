@@ -1500,7 +1500,32 @@ fn lower_when_pattern_text(pattern: &WhenPattern) -> String {
             .map(lower_when_pattern_text)
             .collect::<Vec<_>>()
             .join(" or "),
-        WhenPattern::Binding { path, .. } => format!("{} _", path.join(".")),
+        // Issue #28: `WhenPattern::Binding` has three shapes that
+        // require distinct C# patterns:
+        //
+        //   !bindings.is_empty()
+        //       → destructure binding `Type(a, b)` parsed by
+        //         try_parse_binding_pattern. Lowers to
+        //         `Type(var a, var b)` so each capture introduces a
+        //         scoped variable that can be referenced from a guard.
+        //   bindings.is_empty() && path.len() == 1
+        //       → bare capture variable. Lowers to `var name`.
+        //   bindings.is_empty() && path.len() > 1
+        //       → type-only test (legacy enum binding shape).
+        //         Lowers to `Type _`.
+        WhenPattern::Binding { path, bindings, .. } => {
+            if !bindings.is_empty() {
+                let parts: Vec<String> = bindings
+                    .iter()
+                    .map(|b| if b == "_" { "_".to_string() } else { format!("var {}", b) })
+                    .collect();
+                format!("{}({})", path.join("."), parts.join(", "))
+            } else if path.len() == 1 {
+                format!("var {}", path[0])
+            } else {
+                format!("{} _", path.join("."))
+            }
+        }
         WhenPattern::Range { start, end, .. } => format!(
             ">= {} and <= {}",
             lower_expr(start),
@@ -3148,7 +3173,13 @@ fn lower_expr_with_expected_type(
                         WhenPattern::Expression(expr) => lower_expr_with_expected_type(expr, None, callable_signatures),
                         WhenPattern::Is(ty) => format!("{} _", lower_type(ty)),
                         WhenPattern::Else => "_".into(),
-                        WhenPattern::Binding { path, .. } => format!("{} _", path.join(".")),
+                        // Issue #28: route Binding through the shared
+                        // pattern-text helper so destructure bindings
+                        // (`Type(var a, var b)`) emit correctly inside
+                        // a switch expression. Without this branch the
+                        // binding entries were dropped and the guard
+                        // had no captures to reference.
+                        WhenPattern::Binding { .. } => lower_when_pattern_text(&branch.pattern),
                         WhenPattern::Or { patterns, .. } => {
                             patterns.iter().filter_map(|p| match p {
                                 WhenPattern::Expression(e) => Some(lower_expr_with_expected_type(e, None, callable_signatures)),
@@ -3177,7 +3208,17 @@ fn lower_expr_with_expected_type(
                             callable_signatures,
                         ),
                     };
-                    lines.push(format!("    {} => {},", pattern, value));
+                    // Issue #28: a `when` arm with a guard
+                    // (`Pattern if cond => ...`) lowers to a C# switch
+                    // expression `when` clause. The guard expression
+                    // is appended after the pattern.
+                    let arm_text = if let Some(guard) = &branch.guard {
+                        let guard_str = lower_expr_with_expected_type(guard, None, callable_signatures);
+                        format!("    {} when {} => {},", pattern, guard_str, value)
+                    } else {
+                        format!("    {} => {},", pattern, value)
+                    };
+                    lines.push(arm_text);
                 }
                 if !branches.iter().any(|branch| matches!(branch.pattern, WhenPattern::Else)) {
                     lines.push("    _ => throw new System.InvalidOperationException(\"PrSM when expression is not exhaustive\"),".to_string());
