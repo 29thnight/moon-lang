@@ -1528,6 +1528,26 @@ hello world
         );
     }
 
+    // Issue #20: a lambda literal assigned to a variable annotated
+    // with a function type passes the type check (the analyzer trusts
+    // the explicit annotation rather than producing a function type
+    // from the lambda body).
+    #[test]
+    fn test_lambda_assignment_to_typed_variable() {
+        let src = "component Probe : MonoBehaviour {\n  func go() {\n    val callback: (Int) => Unit = { x => log(\"$x\") }\n    callback(42)\n    val add: (Int, Int) => Int = { a, b => a + b }\n    log(\"${add(3, 4)}\")\n  }\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("Action<int> callback"),
+            "expected Action<int> callback assignment: {}",
+            output
+        );
+        assert!(
+            output.contains("Func<int, int, int> add"),
+            "expected Func<int, int, int> add assignment: {}",
+            output
+        );
+    }
+
     // Issue #31: a safe cast `as Type?` preserves the nullable suffix
     // in the lowered C# output, opting into nullable reference types.
     #[test]

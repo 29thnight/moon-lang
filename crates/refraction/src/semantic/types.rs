@@ -88,6 +88,18 @@ impl PrismType {
         if self == target {
             return true;
         }
+        // Issue #20: a lambda literal trusts the explicit annotation
+        // on the target. The semantic analyzer reports the lambda's
+        // type as `External("lambda")` because PrSM does not yet
+        // construct full function types from lambda parameters and
+        // body. Treat the lambda as assignable to any function-shaped
+        // target so the lang-4 spec example
+        // `val callback: (Int) => Unit = { x => log(x) }` compiles.
+        if let PrismType::External(name) = self {
+            if name == "lambda" {
+                return matches!(target, PrismType::External(_));
+            }
+        }
         // null is assignable to any nullable type
         // A non-null T is assignable to T?
         if let PrismType::Nullable(inner) = target {
