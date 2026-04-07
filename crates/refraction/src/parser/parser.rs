@@ -202,8 +202,12 @@ impl Parser {
         }
 
         // Parse the main declaration
+        let mut decl_ok = false;
         let decl = match self.parse_decl() {
-            Ok(d) => d,
+            Ok(d) => {
+                decl_ok = true;
+                d
+            }
             Err(e) => {
                 self.errors.push(e);
                 // Return a dummy component
@@ -221,6 +225,26 @@ impl Parser {
                 }
             }
         };
+
+        // Issue #8: PrSM requires exactly one top-level declaration per
+        // file (S5.1). Earlier versions silently dropped any second
+        // declaration without a diagnostic, producing the worst possible
+        // developer experience ("where did my function go?"). Emit a
+        // hard error pointing at the start of the offending declaration.
+        //
+        // Only check when the first declaration parsed successfully —
+        // a failed first parse already produces a diagnostic and the
+        // leftover check would surface a misleading second error.
+        if decl_ok {
+            self.skip_newlines();
+            if self.peek() != &TokenKind::Eof {
+                let leftover_span = self.peek_span();
+                self.errors.push(ParseError {
+                    message: "E189: Multiple top-level declarations in a single file. Each .prsm file shall contain exactly one top-level declaration (S5.1). Move the additional declaration into its own .prsm file.".into(),
+                    span: leftover_span,
+                });
+            }
+        }
 
         let end = self.peek_span();
         File {

@@ -1478,6 +1478,27 @@ hello world
         );
     }
 
+    // Issue #8: a `.prsm` file containing more than one top-level
+    // declaration must produce a hard error (E189). Earlier versions
+    // silently dropped the second declaration.
+    #[test]
+    fn test_multiple_top_level_decls_emits_e189() {
+        // The high-level `compile` helper asserts there are zero parser
+        // errors, so we drive the lexer + parser directly here to inspect
+        // the diagnostic list without panicking.
+        let src = "data class PlayerStats(hp: Int)\n\ncomponent Probe : MonoBehaviour {\n  func go() {}\n}";
+        let mut lexer = Lexer::new(src);
+        let tokens = lexer.tokenize();
+        let mut parser = Parser::new(tokens);
+        let _file = parser.parse_file();
+        let errors = parser.errors();
+        assert!(
+            errors.iter().any(|e| e.message.contains("E189")),
+            "expected E189 multi-decl diagnostic, got: {:?}",
+            errors
+        );
+    }
+
     // `arr[1..5]` lowers to a C# range slice. PrSM `..` is inclusive
     // (matching Kotlin), so the lowered upper bound is `(5 + 1)`.
     // `arr until 5` lowers to the half-open form `arr[1..5]`.
