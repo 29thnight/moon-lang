@@ -1528,6 +1528,33 @@ hello world
         );
     }
 
+    // Issue #17: tuple destructure `val (a, b) = expr` lowers to a
+    // C# tuple deconstruction `var (a, b) = expr;`. The lang-4 spec
+    // example for tuples and the v5 discard destructure both depend
+    // on this form.
+    #[test]
+    fn test_tuple_destructure_lowers_to_var_paren() {
+        let src = "component Probe : MonoBehaviour {\n  func getResult(): (Int, String) = (42, \"answer\")\n  func go() {\n    val (num, name) = getResult()\n    log(\"$num $name\")\n  }\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("var (num, name) = getResult()"),
+            "expected `var (num, name) = getResult()`: {}",
+            output
+        );
+    }
+
+    // Issue #17: discard `_` is accepted as a tuple destructure binding.
+    #[test]
+    fn test_tuple_destructure_with_discard() {
+        let src = "component Probe : MonoBehaviour {\n  func getResult(): (Int, String) = (42, \"answer\")\n  func go() {\n    val (_, name) = getResult()\n    log(name)\n  }\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("var (_, name) = getResult()"),
+            "expected `var (_, name) = getResult()`: {}",
+            output
+        );
+    }
+
     // Issue #19: an attribute target name that is a PrSM keyword
     // (`@return`, `@type`) must parse. The previous parser used
     // `expect_ident` and rejected the `return` keyword token, which
