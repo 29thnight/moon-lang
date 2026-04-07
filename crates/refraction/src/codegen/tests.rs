@@ -664,6 +664,41 @@ component PlayerHealth : MonoBehaviour {
         assert!(output.contains("throw new ArgumentException"), "throw should add 'new' keyword");
     }
 
+    // Issue #1: rethrow inside a catch clause must NOT receive a `new`
+    // prefix. The lowered output `throw new e;` would be invalid C#.
+    #[test]
+    fn test_throw_statement_rethrow() {
+        let src = r#"using System
+component Foo : MonoBehaviour {
+  func go() {
+    try {
+      risky()
+    } catch (e: Exception) {
+      throw e
+    }
+  }
+  func risky() { throw Exception("boom") }
+}"#;
+        let output = compile(src);
+        assert!(
+            output.contains("throw e;"),
+            "rethrow should forward variable verbatim: {}",
+            output
+        );
+        assert!(
+            !output.contains("throw new e"),
+            "rethrow must not be wrapped with `new` (invalid C#): {}",
+            output
+        );
+        // The constructor `throw Exception("boom")` in the helper function
+        // should still receive the `new` prefix in the same compile.
+        assert!(
+            output.contains("throw new Exception(\"boom\")"),
+            "constructor throw should still receive `new` prefix: {}",
+            output
+        );
+    }
+
     #[test]
     fn test_static_func() {
         let src = r#"class MathHelper {
@@ -1553,6 +1588,29 @@ hello world
         assert!(
             !output.contains("throw Exception("),
             "lowered output contains bare `throw Exception(` without `new` (invalid C#): {}",
+            output
+        );
+    }
+
+    // Issue #13: throw expression with a variable target must NOT receive
+    // a `new` prefix. `throw cached!!` should forward the variable verbatim.
+    #[test]
+    fn test_throw_expression_variable() {
+        let src = r#"using System
+component Probe : MonoBehaviour {
+  func go(body: GameObject?, cached: Exception?) {
+    val rb = body ?: throw cached!!
+  }
+}"#;
+        let output = compile(src);
+        assert!(
+            output.contains("throw cached"),
+            "throw of a variable should forward verbatim: {}",
+            output
+        );
+        assert!(
+            !output.contains("throw new cached"),
+            "throw of a variable must not be wrapped with `new` (invalid C#): {}",
             output
         );
     }
