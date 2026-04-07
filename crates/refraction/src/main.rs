@@ -31,6 +31,10 @@ enum Commands {
         /// Suppress warnings
         #[arg(short = 'w', long)]
         no_warnings: bool,
+
+        /// v5 Sprint 5: enable the optimizer pass after lowering
+        #[arg(long)]
+        optimize: bool,
     },
 
     /// Check .prsm file(s) without generating output
@@ -182,6 +186,7 @@ fn main() {
             output,
             json,
             no_warnings,
+            optimize,
         } => {
             let files = match driver::collect_prsm_files(&path) {
                 Ok(files) if !files.is_empty() => files,
@@ -196,7 +201,11 @@ fn main() {
             };
 
             let output_dir = output.as_ref().map(|value| Path::new(value.as_str()));
-            let report = driver::compile_paths(&files, output_dir);
+            let report = if optimize {
+                driver::compile_paths_optimized(&files, output_dir)
+            } else {
+                driver::compile_paths(&files, output_dir)
+            };
 
             if json {
                 print_json(serde_json::json!({

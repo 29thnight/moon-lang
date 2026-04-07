@@ -29,7 +29,7 @@ fn lower_usings(usings: &[UsingDecl]) -> Vec<String> {
 
 fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
     match decl {
-        Decl::Component { name, is_singleton, base_class, interfaces, members, .. } => {
+        Decl::Component { name, is_singleton, is_partial, base_class, interfaces, members, .. } => {
             let mut cs_members = Vec::new();
             let callable_signatures = collect_callable_signatures(members);
             let (require_fields, optional_fields, child_fields, parent_fields, pool_fields, user_awake) =
@@ -291,10 +291,15 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                 interfaces.push("System.ComponentModel.INotifyPropertyChanged".into());
             }
 
+            // Language 5, Sprint 5: `partial component Player : ...` lowers
+            // to `public partial class Player ...` so the generated C# can
+            // be merged with hand-written extensions.
+            let modifiers = if *is_partial { "public partial".to_string() } else { "public".to_string() };
+
             (
                 CsClass {
                     attributes: vec![],
-                    modifiers: "public".into(),
+                    modifiers,
                     name: name.clone(),
                     base_class: Some(base_class.clone()),
                     interfaces,
@@ -340,7 +345,7 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                 vec![],
             )
         }
-        Decl::Class { name, is_abstract, is_sealed, type_params, where_clauses, super_class, interfaces, members, .. } => {
+        Decl::Class { name, is_abstract, is_sealed, is_partial, type_params, where_clauses, super_class, interfaces, members, .. } => {
             let mut cs_members = Vec::new();
             let callable_signatures = collect_callable_signatures(members);
             for m in members {
@@ -380,13 +385,19 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
             } else {
                 format!("{}<{}>", name, type_params.join(", "))
             };
-            let modifiers = if *is_abstract {
-                "public abstract".into()
+            // Language 5, Sprint 5: `partial class Foo` lowers with the
+            // C# `partial` modifier so the generated file can be merged
+            // with hand-written extensions.
+            let mut modifiers = if *is_abstract {
+                "public abstract".to_string()
             } else if *is_sealed {
-                "public sealed".into()
+                "public sealed".to_string()
             } else {
-                "public".into()
+                "public".to_string()
             };
+            if *is_partial {
+                modifiers.push_str(" partial");
+            }
             (
                 CsClass {
                     attributes: vec![],

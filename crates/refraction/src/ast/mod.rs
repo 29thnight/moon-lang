@@ -27,6 +27,10 @@ pub struct UsingDecl {
 pub enum Decl {
     Component {
         is_singleton: bool,
+        /// v5 Sprint 5: `partial component Player : MonoBehaviour { ... }`
+        /// emits `public partial class Player ...` so the generated C#
+        /// can be merged with hand-written extensions in another file.
+        is_partial: bool,
         name: String,
         name_span: Span,
         base_class: String,
@@ -49,6 +53,9 @@ pub enum Decl {
         name_span: Span,
         is_abstract: bool,
         is_sealed: bool,
+        /// v5 Sprint 5: `partial class Foo { ... }` lowers to a C#
+        /// `public partial class Foo` declaration.
+        is_partial: bool,
         type_params: Vec<String>,
         where_clauses: Vec<WhereClause>,
         super_class: Option<String>,

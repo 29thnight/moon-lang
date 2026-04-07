@@ -1392,6 +1392,32 @@ hello world
         );
     }
 
+    // ── Language 5, Sprint 5 ──────────────────────────────────────
+
+    // `partial component Player : ...` lowers to `public partial class`.
+    #[test]
+    fn test_partial_component_lowers_to_partial_class() {
+        let src = "partial component Player : MonoBehaviour {\n  func go() {}\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("public partial class Player"),
+            "expected partial class lowering: {}",
+            output
+        );
+    }
+
+    // `partial class Foo { ... }` also lowers with `partial`.
+    #[test]
+    fn test_partial_class_lowers_to_partial_modifier() {
+        let src = "partial class Foo {\n  func bar() {}\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("public partial class Foo"),
+            "expected partial class modifier: {}",
+            output
+        );
+    }
+
     // ── Language 5, Sprint 4 ──────────────────────────────────────
 
     // Relational pattern in a `when` switch lowers to C# 9 `case > N:`.

@@ -145,13 +145,21 @@ pub fn to_json_diagnostic(diagnostic: &Diagnostic, file_path: &str) -> JsonDiagn
 }
 
 pub fn compile_file(source_path: &Path, output_dir: Option<&Path>) -> FileResult {
-    compile_file_with_features(source_path, output_dir, false)
+    compile_file_with_features(source_path, output_dir, false, false)
+}
+
+/// v5 Sprint 5: compile a file with the optimizer pass enabled. The
+/// optimizer rewrites the lowered C# IR in place; any diagnostics it
+/// produces are merged into the FileResult.
+pub fn compile_file_optimized(source_path: &Path, output_dir: Option<&Path>) -> FileResult {
+    compile_file_with_features(source_path, output_dir, false, true)
 }
 
 fn compile_file_with_features(
     source_path: &Path,
     output_dir: Option<&Path>,
     input_system_enabled: bool,
+    optimize: bool,
 ) -> FileResult {
     let mut result = analyze_file_with_features(source_path, input_system_enabled);
     if result.has_errors {
@@ -177,7 +185,11 @@ fn compile_file_with_features(
     let mut analyzer = Analyzer::new().with_input_system_enabled(input_system_enabled);
     let hir_file = analyzer.analyze_file_with_hir(&file, source_path);
 
-    let ir = lower_file(&file);
+    let mut ir = lower_file(&file);
+    if optimize {
+        let opt_report = run_optimizer(&mut ir, crate::lowering::optimizer::OptimizerOptions::default());
+        result.diagnostics.extend(opt_report.diagnostics);
+    }
     let output = emitter::emit(&ir);
 
     let out_path = if let Some(out_dir) = output_dir {
@@ -238,18 +250,25 @@ pub fn check_file(source_path: &Path) -> FileResult {
 }
 
 pub fn compile_paths(files: &[PathBuf], output_dir: Option<&Path>) -> DriverReport {
-    compile_paths_with_features(files, output_dir, false)
+    compile_paths_with_features(files, output_dir, false, false)
+}
+
+/// v5 Sprint 5: compile a list of files with the optimizer pass enabled.
+/// Used by `prism compile --optimize` from the CLI.
+pub fn compile_paths_optimized(files: &[PathBuf], output_dir: Option<&Path>) -> DriverReport {
+    compile_paths_with_features(files, output_dir, false, true)
 }
 
 fn compile_paths_with_features(
     files: &[PathBuf],
     output_dir: Option<&Path>,
     input_system_enabled: bool,
+    optimize: bool,
 ) -> DriverReport {
     summarize(
         files
             .iter()
-            .map(|file| compile_file_with_features(file, output_dir, input_system_enabled))
+            .map(|file| compile_file_with_features(file, output_dir, input_system_enabled, optimize))
             .collect(),
     )
 }
@@ -565,7 +584,7 @@ fn build_project_incremental(
             continue;
         }
 
-        let result = compile_file_with_features(file, Some(output_dir), input_system_enabled);
+        let result = compile_file_with_features(file, Some(output_dir), input_system_enabled, false);
         if !result.has_errors {
             if let (Some(out), Some(map)) = (&result.output_path, &result.source_map_path) {
                 next_manifest.files.insert(

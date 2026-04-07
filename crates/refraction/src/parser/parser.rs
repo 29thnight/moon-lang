@@ -182,6 +182,7 @@ impl Parser {
                 // Return a dummy component
                 Decl::Component {
                     is_singleton: false,
+                    is_partial: false,
                     name: "<error>".into(),
                     name_span: self.peek_span(),
                     base_class: "MonoBehaviour".into(),
@@ -227,6 +228,31 @@ impl Parser {
 
         // Collect annotations before declaration (for @targets on attribute)
         let annotations = self.parse_annotations()?;
+
+        // v5 Sprint 5: optional `partial` modifier on a top-level
+        // component or class declaration. The contextual keyword is
+        // recognized only when the next token is `component` or `class`,
+        // so existing identifiers named `partial` continue to parse.
+        if self.check_contextual("partial") {
+            let next_kind = self.tokens.get(self.pos + 1).map(|t| t.kind.clone());
+            if matches!(next_kind, Some(TokenKind::Component) | Some(TokenKind::Class) | Some(TokenKind::Singleton)) {
+                self.advance(); // consume 'partial'
+                self.skip_newlines();
+                return match self.peek().clone() {
+                    TokenKind::Component => self.parse_component_decl_with(false, true),
+                    TokenKind::Singleton => {
+                        self.advance();
+                        self.skip_newlines();
+                        if !self.check(&TokenKind::Component) {
+                            return Err(self.error("'partial singleton' must be followed by 'component'".into()));
+                        }
+                        self.parse_component_decl_with(true, true)
+                    }
+                    TokenKind::Class => self.parse_class_with_modifiers_full(false, false, true),
+                    _ => Err(self.error("'partial' can only modify 'component' or 'class'".into())),
+                };
+            }
+        }
 
         match self.peek().clone() {
             TokenKind::Component => self.parse_component_decl(false),
@@ -421,6 +447,10 @@ impl Parser {
     }
 
     fn parse_component_decl(&mut self, is_singleton: bool) -> Result<Decl, ParseError> {
+        self.parse_component_decl_with(is_singleton, false)
+    }
+
+    fn parse_component_decl_with(&mut self, is_singleton: bool, is_partial: bool) -> Result<Decl, ParseError> {
         let start = self.peek_span();
         self.advance(); // consume 'component'
 
@@ -436,6 +466,7 @@ impl Parser {
 
         Ok(Decl::Component {
             is_singleton,
+            is_partial,
             name,
             name_span,
             base_class,
@@ -471,6 +502,10 @@ impl Parser {
     }
 
     fn parse_class_with_modifiers(&mut self, is_abstract: bool, is_sealed: bool) -> Result<Decl, ParseError> {
+        self.parse_class_with_modifiers_full(is_abstract, is_sealed, false)
+    }
+
+    fn parse_class_with_modifiers_full(&mut self, is_abstract: bool, is_sealed: bool, is_partial: bool) -> Result<Decl, ParseError> {
         let start = self.peek_span();
         self.advance(); // consume 'class'
 
@@ -508,6 +543,7 @@ impl Parser {
             name_span,
             is_abstract,
             is_sealed,
+            is_partial,
             type_params,
             where_clauses,
             super_class,
