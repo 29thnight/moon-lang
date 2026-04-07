@@ -1528,6 +1528,36 @@ hello world
         );
     }
 
+    // Issue #16: a `var name: Type = init` followed by `get`/`set`
+    // accessors must continue to be parsed as a single property member.
+    // The previous parser closed the field after the initializer and
+    // misparsed the trailing accessor lines as a new top-level decl.
+    #[test]
+    fn test_property_with_init_and_accessors_parses() {
+        let src = "component Player : MonoBehaviour {\n  var maxHp: Int = 100\n  var hp: Int = 100\n    get = _hp\n    set(value) {\n      _hp = Mathf.clamp(value, 0, maxHp)\n    }\n  val isAlive: Bool\n    get = hp > 0\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("public class Player : MonoBehaviour"),
+            "expected component Player to lower: {}",
+            output
+        );
+        assert!(
+            output.contains("public int maxHp"),
+            "expected `maxHp` field/property: {}",
+            output
+        );
+        assert!(
+            output.contains("public int hp"),
+            "expected `hp` property: {}",
+            output
+        );
+        assert!(
+            output.contains("public bool isAlive"),
+            "expected `isAlive` computed property: {}",
+            output
+        );
+    }
+
     // Issue #11: PrSM `length` member access on a collection lowers
     // to PascalCase `Length` so the result is valid against arrays,
     // NativeArray<T>, Span<T>, etc.

@@ -1722,6 +1722,34 @@ impl Parser {
         } else {
             None
         };
+
+        // Issue #16: a property may also carry an explicit initializer
+        // *and* `get`/`set` accessors:
+        //
+        //   var name: String = "Default"
+        //       set(value) { field = value.trim() }
+        //
+        // After consuming the init, look one more time for an accessor
+        // continuation. Without this check the field is closed off as a
+        // plain Member::Field and the trailing `get`/`set` lines are
+        // misparsed as a new top-level declaration (E189).
+        if (mutability == Mutability::Val || mutability == Mutability::Var) && ty.is_some() {
+            let saved = self.pos;
+            self.skip_newlines();
+            if self.check_contextual("get") || self.check_contextual("set") {
+                return self.parse_property_accessors_full(
+                    start,
+                    mutability,
+                    name,
+                    name_span,
+                    ty.unwrap(),
+                    init,
+                    is_serialize,
+                    target_annotations,
+                );
+            }
+            self.pos = saved;
+        }
         self.expect_newline_or_eof();
         // Target annotations on a plain field have no current AST representation.
         let _ = target_annotations;
