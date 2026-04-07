@@ -77,12 +77,14 @@ From lowest to highest binding power:
 | 2 | `\|\|` | Left | Logical OR |
 | 3 | `&&` | Left | Logical AND |
 | 4 | `==` `!=` | Left | Equality |
-| 5 | `<` `>` `<=` `>=` `is` | Left | Comparison, type check |
+| 5 | `<` `>` `<=` `>=` `is` `as` `as!` `in` | Left | Comparison, type check, cast, membership |
 | 6 | `..` `until` `downTo` | — | Range |
 | 7 | `+` `-` | Left | Additive |
 | 8 | `*` `/` `%` | Left | Multiplicative |
-| 9 | `!` `-` (unary) | Right | Unary negation/not |
+| 9 | `!` `-` (unary) `await` | Right | Unary negation/not, await |
 | 10 | `.` `?.` `!!` `[]` `()` | Left | Postfix (member, safe call, assert, index, call) |
+
+`as`, `as!`, `in` are introduced by PrSM 4. `await` is the prefix form added by `async`/`await` (since PrSM 4).
 
 ## Assignment operators
 
@@ -90,8 +92,29 @@ From lowest to highest binding power:
 |---|---|
 | `=` | Assign |
 | `+=` `-=` `*=` `/=` `%=` | Compound assign |
+| `?:=` (since PrSM 4) | Null coalescing assign — assigns only if the left side is `null` |
 
 Assignment is a statement, not an expression.
+
+## Raw string literals (since PrSM 4)
+
+Triple-quoted strings preserve newlines and special characters without escaping. Interpolation (`$var`, `${expr}`) remains active inside raw strings.
+
+```prsm
+val json = """
+    {
+        "name": "Player",
+        "level": 42
+    }
+    """
+
+val query = """
+    SELECT * FROM users
+    WHERE name = '${userName}'
+    """
+```
+
+Lowers to a C# 11 raw string literal where supported, falling back to `@"..."` verbatim strings on older targets.
 
 ## String escape sequences
 

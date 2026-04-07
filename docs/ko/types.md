@@ -83,6 +83,72 @@ val depth = cam?.depth ?: 0   // elvis — 대체값
 val fov = cam!!.fieldOfView   // non-null 단언 (이미 non-null이면 경고 W001)
 ```
 
+## 타입 변환
+
+PrSM은 암묵적 변환을 가지지 않습니다. 모든 타입 관계는 C#으로 그대로 전달됩니다.
+
+### 캐스트 연산자 (PrSM 4 부터)
+
+PrSM 4는 명시적 캐스트 연산자와 변환 메서드를 도입합니다:
+
+| 형식 | 동작 |
+|---|---|
+| `expr as Type?` | 안전 캐스트 — 실패 시 `null` 반환 |
+| `expr as! Type` | 강제 캐스트 — 실패 시 `InvalidCastException` 발생 |
+| `expr.toInt()` `.toFloat()` `.toDouble()` `.toString()` | 명시적 숫자/문자열 변환 |
+
+```prsm
+val enemy = collider as Enemy?      // Enemy 또는 null
+val boss = collider as! Boss        // 불일치 시 예외
+val pixels = 42.toFloat()           // 42.0f
+```
+
+### 스마트 캐스트 (PrSM 4 부터)
+
+`is` 검사 후 변수는 같은 스코프 내에서 검사된 타입으로 좁혀집니다:
+
+```prsm
+if collider is BoxCollider {
+    log(collider.size)   // 여기서 collider는 BoxCollider 타입
+}
+
+when target {
+    is Enemy => target.takeDamage(10)
+    is Ally  => target.heal(5)
+}
+```
+
+명백히 무관한 타입으로의 `as!` 사용 시 E109가 발생합니다. `as?` 결과가 null 검사되지 않으면 W021이 경고됩니다.
+
+## 튜플 (PrSM 4 부터)
+
+튜플은 여러 값을 단일 합성 타입으로 묶습니다. 위치 기반 튜플과 명명된 튜플이 모두 지원되며, 튜플은 별도 변수로 구조 분해할 수 있습니다.
+
+```prsm
+func getResult(): (Int, String) = (42, "answer")
+val (num, name) = getResult()
+
+func getStats(): (hp: Int, mp: Int) = (hp: 100, mp: 50)
+val stats = getStats()
+log(stats.hp)
+```
+
+튜플은 C# `ValueTuple`로 변환됩니다. 구조 분해 개수가 일치해야 합니다 (E117). 잘못된 라벨로 명명 튜플 필드를 접근하면 E118이 발생합니다.
+
+## 타입 별칭 (PrSM 4 부터)
+
+`typealias`는 기존 타입에 대한 컴파일 타임 별칭을 도입합니다. 별칭은 변환 단계에서 제거되며 런타임 비용이 없습니다.
+
+```prsm
+typealias Position = Vector3
+typealias EnemyList = List<Enemy>
+
+val pos: Position = vec3(1, 2, 3)
+val enemies: EnemyList = []
+```
+
+별칭은 순환을 형성할 수 없으며 (E126) 내장 타입을 가릴 수 없습니다 (E127).
+
 ## 전체 타입 매핑 참조
 
 | PrSM | C# | 분류 |

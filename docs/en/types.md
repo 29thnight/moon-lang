@@ -106,6 +106,68 @@ val fov = cam!!.fieldOfView   // assert non-null (warning W001 if already non-nu
 
 PrSM does not have implicit conversions. All type relationships pass through to C#. For instance, `Int` to `Float` requires an explicit cast via `intrinsic` or letting C# handle it when the generated code assigns to a typed position.
 
+### Casting operators (since PrSM 4)
+
+PrSM 4 introduces explicit cast operators and conversion methods:
+
+| Form | Behavior |
+|---|---|
+| `expr as Type?` | Safe cast — returns `null` if the cast fails |
+| `expr as! Type` | Force cast — throws `InvalidCastException` if the cast fails |
+| `expr.toInt()` `.toFloat()` `.toDouble()` `.toString()` | Explicit numeric/string conversion |
+
+```prsm
+val enemy = collider as Enemy?      // Enemy or null
+val boss = collider as! Boss        // throws on mismatch
+val pixels = 42.toFloat()           // 42.0f
+```
+
+### Smart casts (since PrSM 4)
+
+After an `is` check, the variable is narrowed to the checked type within the same scope:
+
+```prsm
+if collider is BoxCollider {
+    log(collider.size)   // collider has type BoxCollider here
+}
+
+when target {
+    is Enemy => target.takeDamage(10)
+    is Ally  => target.heal(5)
+}
+```
+
+E109 is raised when `as!` is used to cast to a provably unrelated type. W021 warns when an `as?` result is never null-checked.
+
+## Tuples (since PrSM 4)
+
+Tuples group multiple values into a single compound type. Both positional and named tuples are supported, and tuples can be destructured into separate variables.
+
+```prsm
+func getResult(): (Int, String) = (42, "answer")
+val (num, name) = getResult()
+
+func getStats(): (hp: Int, mp: Int) = (hp: 100, mp: 50)
+val stats = getStats()
+log(stats.hp)
+```
+
+Tuples lower to C# `ValueTuple`. Destructuring count must match (E117); named-tuple field access with the wrong label produces E118.
+
+## Type aliases (since PrSM 4)
+
+`typealias` introduces a compile-time alias for an existing type. Aliases are erased during lowering — they have no runtime cost.
+
+```prsm
+typealias Position = Vector3
+typealias EnemyList = List<Enemy>
+
+val pos: Position = vec3(1, 2, 3)
+val enemies: EnemyList = []
+```
+
+Aliases shall not form cycles (E126) and shall not shadow built-in types (E127).
+
 ## Complete type mapping reference
 
 | PrSM | C# | Category |

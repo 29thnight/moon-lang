@@ -241,6 +241,197 @@ This generates: static `Instance` property with lazy initialization, `Awake` dup
 
 `singleton` is only valid on `component` declarations (E097).
 
+## `struct` declaration (since PrSM 4)
+
+`struct` declares a value type with copy semantics and stack allocation. Similar to `data class` but stored as a C# `struct`.
+
+```prsm
+struct DamageInfo(amount: Int, type: DamageType)
+
+struct Color32(r: Byte, g: Byte, b: Byte, a: Byte) {
+    static val white = Color32(255, 255, 255, 255)
+    static val black = Color32(0, 0, 0, 255)
+}
+```
+
+Generated C#:
+
+```csharp
+public struct DamageInfo {
+    public int amount;
+    public DamageType type;
+    public DamageInfo(int amount, DamageType type) { this.amount = amount; this.type = type; }
+}
+```
+
+Structs may not inherit from a class (E120). Structs larger than 16 bytes emit W022 to flag potential copy cost.
+
+## Property `get` / `set` (since PrSM 4)
+
+Properties may have custom accessors. `val` with only `get` defines a computed read-only property. Inside `set`, the implicit `field` keyword refers to the auto-generated backing field (Kotlin-style).
+
+```prsm
+component Player : MonoBehaviour {
+    var hp: Int
+        get = _hp
+        set(value) {
+            _hp = Mathf.clamp(value, 0, maxHp)
+            onHpChanged?.invoke(_hp)
+        }
+
+    val isAlive: Bool
+        get = hp > 0
+}
+```
+
+Generated C#:
+
+```csharp
+private int __hp;
+public int hp {
+    get => __hp;
+    set {
+        __hp = Mathf.Clamp(value, 0, maxHp);
+        onHpChanged?.Invoke(__hp);
+    }
+}
+public bool isAlive => hp > 0;
+```
+
+E110 fires if `set` is declared on a `val`. E111 fires if `field` appears outside a property accessor.
+
+## `event` members (since PrSM 4)
+
+`event` declares a multicast delegate that supports `+=` / `-=` subscription and `.invoke()` dispatch:
+
+```prsm
+component Damageable : MonoBehaviour {
+    event onHealthChanged: (Int) => Unit
+
+    func takeDamage(amount: Int) {
+        hp -= amount
+        onHealthChanged.invoke(hp)
+    }
+}
+
+// elsewhere:
+target.onHealthChanged += { hp => log("HP: $hp") }
+```
+
+Generated C#:
+
+```csharp
+public event Action<int> onHealthChanged;
+// ...
+onHealthChanged?.Invoke(hp);
+```
+
+Events may only be invoked from inside the declaring type (E121) and must have a `Unit` return type (E122). Function-typed callbacks (`var onDamaged: ((Int) => Unit)? = null`) provide single-cast equivalents without the `event` keyword.
+
+## Extension methods — `extend` (since PrSM 4)
+
+`extend Type { }` adds methods and computed properties to an existing type. Inside the block, `this` refers to the receiver instance:
+
+```prsm
+extend Transform {
+    func resetLocal() {
+        this.localPosition = Vector3.zero
+        this.localRotation = Quaternion.identity
+        this.localScale = Vector3.one
+    }
+}
+
+extend Vector3 {
+    val flat: Vector3
+        get = vec3(this.x, 0, this.z)
+}
+
+transform.resetLocal()
+val groundPos = transform.position.flat
+```
+
+Lowers to a static class with C# extension methods. Extension blocks shall not contain mutable state (E113).
+
+## `bind` reactive properties (since PrSM 4)
+
+`bind` declares a reactive property that automatically notifies subscribers when its value changes. The compiler emits `INotifyPropertyChanged` plumbing:
+
+```prsm
+component PlayerHUD : MonoBehaviour {
+    bind hp: Int = 100
+    bind playerName: String = "Hero"
+
+    serialize hpLabel: TextMeshProUGUI
+
+    awake {
+        bind hp to hpLabel.text
+    }
+}
+```
+
+Generated C#:
+
+```csharp
+private int _hp = 100;
+public int hp {
+    get => _hp;
+    set {
+        if (_hp != value) {
+            _hp = value;
+            OnPropertyChanged(nameof(hp));
+        }
+    }
+}
+
+public event PropertyChangedEventHandler PropertyChanged;
+```
+
+E143 fires when a `bind to` target is not writable. E144 fires on a type mismatch between the source and target. W031 warns about bind properties that are never read.
+
+## `command` declarations (since PrSM 4)
+
+`command` declares an executable action with optional undo support and a guard condition. The compiler generates a nested `ICommand` implementation:
+
+```prsm
+component UnitController : MonoBehaviour {
+    command moveUnit(target: Vector3) {
+        val prevPos = transform.position
+        transform.position = target
+    } undo {
+        transform.position = prevPos
+    } canExecute = isAlive && !isStunned
+}
+```
+
+The compiler emits a `MoveUnitCommand : ICommand` class with `Execute()`, `Undo()`, and `CanExecute()` plus a helper method on the owner. Commands without a `canExecute` guard emit W030.
+
+## `state machine` declarations (since PrSM 4)
+
+`state machine` declares a finite state machine with named states, transitions, and optional `enter`/`exit` hooks:
+
+```prsm
+component EnemyAI : MonoBehaviour {
+    state machine aiState {
+        state Idle {
+            enter { playAnimation("idle") }
+            on playerDetected => Chase
+        }
+        state Chase {
+            enter { playAnimation("run") }
+            on playerLost => Idle
+            on inAttackRange => Attack
+        }
+        state Attack {
+            enter { playAnimation("attack") }
+            exit  { resetCooldown() }
+            on attackDone => Chase
+        }
+    }
+}
+```
+
+The compiler generates a private state enum, a current-state field, a public `TransitionAiState(string event)` dispatcher, and `_enterAiState`/`_exitAiState` helpers. Transitions to undeclared states fire E140; duplicate state names fire E141; states with no outgoing transitions emit W029.
+
 ## `pool` modifier (since PrSM 3)
 
 The `pool` modifier creates an object pool backed by `UnityEngine.Pool.ObjectPool<T>`:

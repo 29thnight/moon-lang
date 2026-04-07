@@ -537,3 +537,79 @@ data class Empty()  // W005
 **설명:** 50개 이상의 구문을 가진 메서드 또는 라이프사이클 블록은 읽고 유지하기 어렵습니다. 이 경고는 SOLID 단일 책임 원칙 준수를 권장합니다.
 
 **해결 방법:** 로직을 더 작은 헬퍼 메서드로 분리하세요.
+
+---
+
+## 언어 4 진단 (PrSM 4 부터)
+
+PrSM 4는 예외, 람다, 수정자, 캐스트, 프로퍼티, 구조체, 비동기, Burst, v4 패턴 편의 기능을 다루는 47개의 새로운 진단 코드 (E100–E146, W020–W032)를 도입합니다. 각 코드의 조건은 아래에 요약되어 있습니다.
+
+### 오류
+
+| 코드 | 기능 | 조건 |
+|------|------|------|
+| E100 | try/catch | 도달 불가능한 catch 절 (위에서 슈퍼타입이 잡힘) |
+| E101 | throw | throw 표현식이 Exception 서브타입이 아님 |
+| E102 | Lambda | 예상 함수 타입과 람다 매개변수 개수 불일치 |
+| E103 | Lambda | 컨텍스트 없이 람다 매개변수 타입 추론 불가 |
+| E104 | Lambda | 다중 매개변수 람다에 `it` 사용 |
+| E105 | const | `const`의 비리터럴 초기화자 |
+| E106 | static | 라이프사이클 블록에 `static` |
+| E107 | Collection | 타입 주석 없는 빈 컬렉션 리터럴 |
+| E108 | Collection | 컬렉션 리터럴의 혼합된 원소 타입 |
+| E109 | Cast | 명백히 무관한 타입으로의 `as!` |
+| E110 | Property | `val` 프로퍼티에 `set` |
+| E111 | Property | 프로퍼티 접근자 외부의 `field` |
+| E112 | extend | 확장 멤버가 타깃 타입의 기존 멤버와 충돌 |
+| E113 | extend | 확장 블록이 상태 (`var` 필드)를 포함 |
+| E114 | Modifier | 일치하는 `open`/`abstract` 부모 없는 `override` |
+| E115 | sealed | sealed 클래스에 비완전 `when` |
+| E116 | abstract | `abstract` 클래스의 인스턴스화 |
+| E117 | Tuple | 튜플 구조 분해 개수 불일치 |
+| E118 | Tuple | 잘못된 라벨로 명명 튜플 필드 접근 |
+| E119 | use | 타입이 `IDisposable`을 구현하지 않음 |
+| E120 | struct | 클래스를 상속하는 구조체 |
+| E121 | event | 선언 타입 외부에서 이벤트 호출 |
+| E122 | event | 비-Unit 반환 타입의 이벤트 |
+| E123 | Operator | `operator` 선언의 알 수 없는 연산자 이름 |
+| E124 | Operator | 일치하는 `GetHashCode` 오버라이드 없는 `operator equals` |
+| E125 | Indexer | 가변 인덱서에 `operator set` 없는 `operator get` |
+| E126 | typealias | 순환 참조를 만드는 typealias |
+| E127 | typealias | 내장 타입 이름을 가리는 typealias |
+| E128 | Raw string | 종료되지 않은 원시 문자열 리터럴 |
+| E129 | in | `Contains`/`ContainsKey` 없는 타입에 `in` 사용 |
+| E130 | OR pattern | 다른 변수를 바인딩하는 OR 패턴 분기 |
+| E131 | Range pattern | low > high인 범위 패턴 |
+| E132 | ?:= | non-nullable 변수에 null 병합 대입 |
+| E133 | ?:= | `val`(불변)에 null 병합 대입 |
+| E134 | Interface | 타깃 C# 버전에서 사용 불가능한 디폴트 인터페이스 메서드 기능 |
+| E135 | async | `async func` 외부의 `await` |
+| E136 | async | awaitable이 아닌 반환 타입의 `async func` |
+| E137 | Burst | `@burst` 메서드의 관리 타입 참조 |
+| E138 | Burst | `@burst` 메서드의 `try`/`catch` |
+| E139 | Burst | `@burst` 컨텍스트의 가상 또는 인터페이스 호출 |
+| E140 | State machine | 선언되지 않은 상태로의 전이 |
+| E141 | State machine | 중복된 상태 이름 |
+| E142 | Command | `undo`가 `execute`에서 캡처되지 않은 변수 참조 |
+| E143 | bind | `bind to` 타깃이 쓰기 가능 프로퍼티가 아님 |
+| E144 | bind | 소스와 타깃 사이 `bind` 타입 불일치 |
+| E145 | DX | 조건 표현식으로 사용된 대입 |
+| E146 | DX | 일반적인 API 오용 감지 |
+
+### 경고
+
+| 코드 | 기능 | 조건 |
+|------|------|------|
+| W020 | try/catch | 빈 `catch` 블록 |
+| W021 | Cast | `as?` 결과가 null 검사되지 않음 |
+| W022 | struct | 큰 구조체 (16바이트 초과) |
+| W023 | Range pattern | `when`에서 겹치는 범위 패턴 |
+| W024 | Interface | 디폴트 인터페이스 메서드가 인스턴스 상태 참조 |
+| W025 | async | `async func`가 `await`를 사용하지 않음 |
+| W026 | Optimizer | 핫 패스의 문자열 할당 (`opt.string`이 캐시) |
+| W027 | Optimizer | `Update`/`FixedUpdate`의 LINQ 체인 (`opt.linq`이 재작성) |
+| W028 | Burst | `@burst` 메서드에서 박싱 감지 |
+| W029 | State machine | 나가는 전이가 없는 상태 (죽은 상태) |
+| W030 | Command | `canExecute` 가드 없이 선언된 `command` |
+| W031 | bind | 읽히지 않는 `bind` 프로퍼티 |
+| W032 | Debugger | 파일에 대한 소스 맵 생성 실패 (치명적 아님) |

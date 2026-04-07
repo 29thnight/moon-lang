@@ -63,7 +63,8 @@
       { "id": "standard", "title": "언어 표준", "path": "docs/ko/spec/standard.md" },
       { "id": "lang-1", "title": "PrSM 1", "path": "docs/ko/spec/lang-1.md" },
       { "id": "lang-2", "title": "PrSM 2", "path": "docs/ko/spec/lang-2.md" },
-      { "id": "lang-3", "title": "PrSM 3", "path": "docs/ko/spec/lang-3.md" }
+      { "id": "lang-3", "title": "PrSM 3", "path": "docs/ko/spec/lang-3.md" },
+      { "id": "lang-4", "title": "PrSM 4", "path": "docs/ko/spec/lang-4.md" }
     ]
   },
   {

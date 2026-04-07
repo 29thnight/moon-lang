@@ -107,6 +107,111 @@ for Spawn(pos, delay) in wave.spawns {
 }
 ```
 
+### OR 패턴 (PrSM 4 부터)
+
+`when` 분기에서 쉼표로 구분된 여러 패턴은 개별 패턴 중 하나라도 매치되면 매치됩니다. OR 그룹의 모든 분기는 같은 변수 집합을 바인딩해야 합니다 (또는 어느 것도 바인딩하지 않아야 합니다).
+
+```prsm
+when direction {
+    Direction.Up, Direction.Down    => handleVertical()
+    Direction.Left, Direction.Right => handleHorizontal()
+}
+```
+
+생성 C#:
+
+```csharp
+switch (direction) {
+    case Direction.Up:
+    case Direction.Down:
+        handleVertical();
+        break;
+    case Direction.Left:
+    case Direction.Right:
+        handleHorizontal();
+        break;
+}
+```
+
+다른 변수를 바인딩하는 OR 패턴 분기는 E130을 발생시킵니다.
+
+### 범위 패턴 (PrSM 4 부터)
+
+`when` 분기 안의 `in low..high`는 닫힌 범위 `[low, high]` 내의 값을 매치합니다. 정수형과 부동소수점 타입만 지원됩니다.
+
+```prsm
+when score {
+    in 90..100 => "A"
+    in 80..89  => "B"
+    in 70..79  => "C"
+    else       => "F"
+}
+```
+
+`low > high`인 범위는 E131을 발생시킵니다. 겹치는 범위 패턴은 W023을 발생시킵니다.
+
+### `when`의 스마트 캐스트 (PrSM 4 부터)
+
+`is` 분기가 매치된 후 분기 본문 내에서 주체는 검사된 타입으로 좁혀집니다:
+
+```prsm
+when target {
+    is Enemy => target.takeDamage(10)
+    is Ally  => target.heal(5)
+}
+```
+
+## `try` / `catch` / `finally` (PrSM 4 부터)
+
+예외가 일급 시민이 됩니다. `throw`에서 `new` 키워드는 생략됩니다. `try`는 정확히 하나의 `catch` 절이 있을 때 표현식으로 사용할 수 있습니다.
+
+```prsm
+try {
+    val data = File.readAllText(path)
+} catch (e: FileNotFoundException) {
+    warn(e.message)
+} catch (e: Exception) {
+    error(e.message)
+} finally {
+    cleanup()
+}
+
+throw ArgumentException("Invalid value")
+
+val result = try { parseInt(str) } catch (e: Exception) { -1 }
+```
+
+생성 C#:
+
+```csharp
+try
+{
+    var data = File.ReadAllText(path);
+}
+catch (FileNotFoundException e) { Debug.LogWarning(e.Message); }
+catch (Exception e) { Debug.LogError(e.Message); }
+finally { Cleanup(); }
+
+throw new ArgumentException("Invalid value");
+```
+
+상위 절에서 이미 잡힌 타입의 `catch` 절은 E100을 발생시킵니다. 비-Exception 표현식의 `throw`는 E101을 발생시킵니다. 빈 `catch` 블록은 W020을 발생시킵니다.
+
+## `use` (IDisposable) (PrSM 4 부터)
+
+`use`는 `IDisposable` 리소스의 자동 해제를 보장합니다. 블록 형식은 블록 종료 시점에, 선언 형식은 둘러싼 스코프 종료 시점에 해제합니다.
+
+```prsm
+use stream = FileStream(path, FileMode.Open) {
+    val data = stream.readToEnd()
+}
+
+use val conn = DbConnection(connString)
+// 스코프 종료 시 conn 자동 해제
+```
+
+C# `using` 문 (블록 형식) 또는 `using` 선언 (`use val`)으로 변환됩니다. IDisposable을 구현하지 않는 타입에 `use`를 사용하면 E119가 발생합니다.
+
 ## `if`, `for`, `while`
 
 PrSM 제어문은 괄호 없이 중괄호 기반으로 작성합니다.

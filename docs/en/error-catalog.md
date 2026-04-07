@@ -537,3 +537,79 @@ data class Empty()  // W005
 **Explanation:** A method or lifecycle block with 50 or more statements is difficult to read and maintain. This warning encourages adherence to the SOLID Single Responsibility Principle.
 
 **Fix:** Extract logic into smaller helper methods.
+
+---
+
+## Language 4 diagnostics (since PrSM 4)
+
+PrSM 4 introduces 47 new diagnostic codes (E100–E146, W020–W032) covering exceptions, lambdas, modifiers, casts, properties, structs, async, Burst, and the v4 pattern sugars. The condition for each is summarized below; full prose entries follow the same format as the codes above.
+
+### Errors
+
+| Code | Feature | Condition |
+|------|---------|-----------|
+| E100 | try/catch | Unreachable catch clause (supertype caught above) |
+| E101 | throw | Throw expression is not an Exception subtype |
+| E102 | Lambda | Lambda parameter count mismatch with expected function type |
+| E103 | Lambda | Cannot infer lambda parameter types without context |
+| E104 | Lambda | `it` used in multi-parameter lambda |
+| E105 | const | Non-literal initializer for `const` |
+| E106 | static | `static` on a lifecycle block |
+| E107 | Collection | Empty collection literal without type annotation |
+| E108 | Collection | Mixed element types in collection literal |
+| E109 | Cast | `as!` to provably unrelated type |
+| E110 | Property | `set` on a `val` property |
+| E111 | Property | `field` outside a property accessor |
+| E112 | extend | Extension member conflicts with existing member on target type |
+| E113 | extend | Extension block contains state (`var` field) |
+| E114 | Modifier | `override` without matching `open`/`abstract` parent |
+| E115 | sealed | Non-exhaustive `when` on sealed class |
+| E116 | abstract | Instantiation of an `abstract` class |
+| E117 | Tuple | Tuple destructuring count mismatch |
+| E118 | Tuple | Named tuple field access with wrong label |
+| E119 | use | Type does not implement `IDisposable` |
+| E120 | struct | Struct inheriting from a class |
+| E121 | event | Event invoked from outside the declaring type |
+| E122 | event | Event with non-Unit return type |
+| E123 | Operator | Unknown operator name in `operator` declaration |
+| E124 | Operator | `operator equals` without matching `GetHashCode` override |
+| E125 | Indexer | `operator get` without `operator set` on a mutable indexer |
+| E126 | typealias | typealias creating a circular reference |
+| E127 | typealias | typealias shadows a built-in type name |
+| E128 | Raw string | Unterminated raw string literal |
+| E129 | in | `in` used with a type that has no `Contains`/`ContainsKey` |
+| E130 | OR pattern | OR pattern arms bind different variables |
+| E131 | Range pattern | Range pattern with low > high |
+| E132 | ?:= | Null coalescing assign on non-nullable variable |
+| E133 | ?:= | Null coalescing assign on a `val` (immutable) |
+| E134 | Interface | Default interface method uses feature unavailable in target C# version |
+| E135 | async | `await` outside of `async func` |
+| E136 | async | `async func` with non-awaitable return type |
+| E137 | Burst | Managed type reference in `@burst` method |
+| E138 | Burst | `try`/`catch` in `@burst` method |
+| E139 | Burst | Virtual or interface call in `@burst` context |
+| E140 | State machine | Transition to undeclared state |
+| E141 | State machine | Duplicate state name |
+| E142 | Command | `undo` references variable not captured during `execute` |
+| E143 | bind | `bind to` target is not a writable property |
+| E144 | bind | `bind` type mismatch between source and target |
+| E145 | DX | Assignment used as condition expression |
+| E146 | DX | Common API misuse detected |
+
+### Warnings
+
+| Code | Feature | Condition |
+|------|---------|-----------|
+| W020 | try/catch | Empty `catch` block |
+| W021 | Cast | `as?` result never null-checked |
+| W022 | struct | Large struct (over 16 bytes) |
+| W023 | Range pattern | Overlapping range patterns in `when` |
+| W024 | Interface | Default interface method references instance state |
+| W025 | async | `async func` that never uses `await` |
+| W026 | Optimizer | String allocation in hot path (cached by `opt.string`) |
+| W027 | Optimizer | LINQ chain in `Update`/`FixedUpdate` (rewritten by `opt.linq`) |
+| W028 | Burst | Boxing detected in `@burst` method |
+| W029 | State machine | State with no outgoing transitions (dead state) |
+| W030 | Command | `command` declared without a `canExecute` guard |
+| W031 | bind | `bind` property never read |
+| W032 | Debugger | Source map generation failed for a file (non-fatal) |

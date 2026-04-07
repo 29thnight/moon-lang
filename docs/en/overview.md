@@ -17,6 +17,17 @@ The language targets the day-to-day gameplay scripting loop: components that rea
 - **Null-safety by default** — field qualifiers carry meaning at compile time so the compiler can reject missing or misused references before Unity processes the asset
 - **Traceable** — `.prsmmap.json` sidecars record how each PrSM declaration maps to the generated C# output, enabling the VS Code extension and Unity editor to navigate, remap diagnostics, and unwind stack traces back to `.prsm` source
 
+## Language versions
+
+| Version | Tool release | Highlights |
+|---------|--------------|------------|
+| [PrSM 1](spec/lang-1.md) | Prism v0.x | Core component model, lifecycle blocks, `serialize`/`require`, `listen`, coroutines |
+| [PrSM 2](spec/lang-2.md) | Prism v0.x | Pattern bindings, listen lifetimes, destructuring, Input System sugar, generic inference |
+| [PrSM 3](spec/lang-3.md) | Prism v1.0.0 | Interfaces, generics, `singleton`, `pool`, SOLID warnings, optimizer |
+| [PrSM 4](spec/lang-4.md) | Prism v2.0.0 | 30 features: try/catch, lambdas, properties, struct, async/await, state machine, command, bind, optimizer v4, Burst analysis, Rust/Elm-style errors, refactoring tools, debugger source maps |
+
+Each version is fully backward-compatible — programs from earlier versions compile without changes. See [Version Migration](migration-v1-to-v2.md) for upgrade steps.
+
 ## Repository layout
 
 | Path | Role |
