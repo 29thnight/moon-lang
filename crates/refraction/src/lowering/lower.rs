@@ -163,6 +163,28 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                         cs_members.extend(lower_state_machine(sm_name, states, &callable_signatures));
                     }
                     Member::Command { name: cmd_name, params, execute, undo, can_execute, .. } => {
+                        // Issue #24: collect the owner's member names so
+                        // the command sugar can rewrite bare references
+                        // (`prevPos`, `transform`, `isAlive`) into
+                        // `_owner.prevPos`, `_owner.transform`, etc.
+                        // inside the generated nested ICommand class.
+                        let owner_member_names: Vec<String> = members
+                            .iter()
+                            .filter_map(|m| match m {
+                                Member::Field { name, .. } => Some(name.clone()),
+                                Member::Property { name, .. } => Some(name.clone()),
+                                Member::Require { name, .. } => Some(name.clone()),
+                                Member::Optional { name, .. } => Some(name.clone()),
+                                Member::Child { name, .. } => Some(name.clone()),
+                                Member::Parent { name, .. } => Some(name.clone()),
+                                Member::Func { name, .. } => Some(name.clone()),
+                                Member::BindProperty { name, .. } => Some(name.clone()),
+                                _ => None,
+                            })
+                            .chain(["transform", "gameObject", "tag", "name", "enabled", "isActiveAndEnabled"]
+                                .iter()
+                                .map(|s| s.to_string()))
+                            .collect();
                         let (helper, class) = lower_command_member(
                             name,
                             cmd_name,
@@ -171,6 +193,7 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                             undo.as_ref(),
                             can_execute.as_ref(),
                             &callable_signatures,
+                            &owner_member_names,
                         );
                         cs_members.push(helper);
                         command_classes.push(class);
@@ -5135,6 +5158,7 @@ fn lower_command_member(
     undo: Option<&Block>,
     can_execute: Option<&Expr>,
     callable_signatures: &HashMap<String, CallableSignature>,
+    owner_member_names: &[String],
 ) -> (CsMember, CsClass) {
     let class_name = format!("{}Command", capitalize(member_name));
     let mut cs_members: Vec<CsMember> = Vec::new();
@@ -5195,10 +5219,16 @@ fn lower_command_member(
     });
 
     // CanExecute
-    let can_expr = match can_execute {
+    let mut can_expr = match can_execute {
         Some(e) => lower_expr_with_expected_type(e, None, Some(callable_signatures)),
         None => "true".into(),
     };
+    // Issue #24: rewrite bare owner-member identifiers to `_owner.name`
+    // so they resolve inside the nested class. Apply to the CanExecute
+    // expression text directly via word-boundary replace.
+    for m in owner_member_names {
+        can_expr = replace_word(&can_expr, m, &format!("_owner.{}", m));
+    }
     cs_members.push(CsMember::RawCode(format!(
         "public bool CanExecute() => {};",
         can_expr
@@ -5213,6 +5243,12 @@ fn lower_command_member(
         .map(|s| lower_stmt_with_context(s, Some(callable_signatures), None))
         .collect();
     replace_this_in_stmts(&mut exec_body, "_owner");
+    // Issue #24: rewrite owner member references inside the body BEFORE
+    // parameter rewriting so a parameter named the same as a member
+    // (rare but possible) takes precedence.
+    for m in owner_member_names {
+        replace_ident_in_stmts(&mut exec_body, m, &format!("_owner.{}", m));
+    }
     // Also rewrite parameter references `pname` → `_pname` by wrapping via map.
     for p in params {
         replace_ident_in_stmts(&mut exec_body, &p.name, &format!("_{}", p.name));
@@ -5237,6 +5273,10 @@ fn lower_command_member(
             .map(|s| lower_stmt_with_context(s, Some(callable_signatures), None))
             .collect();
         replace_this_in_stmts(&mut undo_body, "_owner");
+        // Issue #24: same owner-member rewrite as Execute.
+        for m in owner_member_names {
+            replace_ident_in_stmts(&mut undo_body, m, &format!("_owner.{}", m));
+        }
         for p in params {
             replace_ident_in_stmts(&mut undo_body, &p.name, &format!("_{}", p.name));
         }

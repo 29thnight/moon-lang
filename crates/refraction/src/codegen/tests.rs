@@ -1528,6 +1528,33 @@ hello world
         );
     }
 
+    // Issue #24: command sugar nested ICommand class rewrites bare
+    // owner-member references to `_owner.name` (fields, properties,
+    // methods, lookup fields, and Unity-component built-ins like
+    // `transform` / `gameObject`). Without this fix the generated
+    // CanExecute / Execute / Undo bodies referenced undefined
+    // identifiers.
+    #[test]
+    fn test_command_sugar_owner_member_rewrite() {
+        let src = "component UnitController : MonoBehaviour {\n  var prevPos: Vector3 = Vector3.zero\n  var isAlive: Bool = true\n  var isStunned: Bool = false\n  command moveUnit(target: Vector3) {\n    prevPos = transform.position\n    transform.position = target\n  } undo {\n    transform.position = prevPos\n  } canExecute = isAlive && !isStunned\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("CanExecute() => _owner.isAlive && !(_owner.isStunned)"),
+            "expected `_owner.isAlive` / `_owner.isStunned` rewrite in CanExecute: {}",
+            output
+        );
+        assert!(
+            output.contains("_owner.prevPos = _owner.transform.position"),
+            "expected `_owner.prevPos = _owner.transform.position` in Execute: {}",
+            output
+        );
+        assert!(
+            output.contains("_owner.transform.position = _owner.prevPos"),
+            "expected `_owner.transform.position = _owner.prevPos` in Undo: {}",
+            output
+        );
+    }
+
     // Issue #26: a `typealias Name = Target` declaration emits a C#
     // file-scoped using alias directive (`using Name = Target;`).
     #[test]
