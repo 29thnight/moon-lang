@@ -1528,6 +1528,35 @@ hello world
         );
     }
 
+    // Issue #29: a nested data class lowers with the correct indent
+    // (one level inside the parent class) and the parent's collection
+    // field uses the nested type rather than `object` (covered by
+    // #25). The previous lowering left the original 4-space indent on
+    // every line of the nested class, producing a doubled indent in
+    // the final output.
+    #[test]
+    fn test_nested_data_class_indent() {
+        let src = "component Inventory : MonoBehaviour {\n  data class Slot(itemId: Int, count: Int)\n  var slots: List<Slot> = []\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("List<Slot> _slots = new System.Collections.Generic.List<Slot>()"),
+            "expected `List<Slot>` substitution: {}",
+            output
+        );
+        // The nested class header should be indented one level inside
+        // the parent class body (4 spaces in front of `public class`).
+        assert!(
+            output.contains("\n    public class Slot"),
+            "expected nested class indented at parent body depth: {}",
+            output
+        );
+        assert!(
+            !output.contains("\n        public class Slot"),
+            "lowered output must not double-indent the nested class header: {}",
+            output
+        );
+    }
+
     // Issue #28: positional pattern with binding variables and a guard
     // (`Point(x, y) if x == y`) lowers to a C# switch expression with
     // the captures and the `when` clause preserved. The previous

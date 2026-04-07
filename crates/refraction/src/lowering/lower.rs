@@ -1463,11 +1463,16 @@ fn lower_awake(
 /// so the resulting block aligns with sibling fields/methods.
 fn render_nested_class(cls: &CsClass) -> String {
     let raw = crate::codegen::emitter::emit_class_at(cls, 1);
-    // Strip the leading 4-space indent from the first line because the
-    // emitter prepends an indent to every member, and the parent class
-    // emitter will indent the RawCode block again.
-    let stripped = raw.strip_prefix("    ").unwrap_or(&raw);
-    stripped.trim_end().to_string()
+    // Strip the leading 4-space indent from *every* line. The emitter
+    // wrote the class at indent depth 1, but the parent class emitter
+    // will re-indent the RawCode block at its own depth — leaving the
+    // original 4-space prefix on every line therefore produces an
+    // extra indent step on every nested member (#29 visual bug).
+    let stripped: Vec<&str> = raw
+        .lines()
+        .map(|line| line.strip_prefix("    ").unwrap_or(line))
+        .collect();
+    stripped.join("\n").trim_end().to_string()
 }
 
 /// Language 5, Sprint 4: lower a `WhenPattern` to its C# 9 case-pattern
