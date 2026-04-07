@@ -3004,6 +3004,19 @@ fn lower_expr_with_expected_type(
                 // valid against any standard collection type.
                 (_, "length") => format!("{}.Length", recv),
                 (_, "count") => format!("{}.Count", recv),
+                // Issue #30: System.Exception members are PascalCase in
+                // C# (`Message`, `StackTrace`, `Source`, `HelpLink`,
+                // `InnerException`, `Data`, `TargetSite`). PrSM uses
+                // camelCase for member access; forward the well-known
+                // exception members to their C# counterparts so
+                // `e.message` lowers to `e.Message`. The mapping is
+                // safe because no Unity API exposes a camelCase
+                // `message`/`stackTrace`/etc. on the same receiver path.
+                (_, "message") => format!("{}.Message", recv),
+                (_, "stackTrace") => format!("{}.StackTrace", recv),
+                (_, "innerException") => format!("{}.InnerException", recv),
+                (_, "helpLink") => format!("{}.HelpLink", recv),
+                (_, "targetSite") => format!("{}.TargetSite", recv),
                 _ => format!("{}.{}", recv, name),
             }
         }

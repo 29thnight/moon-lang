@@ -1528,6 +1528,26 @@ hello world
         );
     }
 
+    // Issue #30: PrSM `e.message` member access on a System.Exception
+    // lowers to PascalCase `e.Message`. Other Exception members
+    // (`stackTrace`, `innerException`, `helpLink`, `targetSite`) get
+    // the same treatment.
+    #[test]
+    fn test_exception_message_lowers_to_pascalcase() {
+        let src = "using System\ncomponent Probe : MonoBehaviour {\n  func go() {\n    try { risky() } catch (e: Exception) { log(e.message) }\n  }\n  func risky() { throw Exception(\"boom\") }\n}";
+        let output = compile(src);
+        assert!(
+            output.contains("e.Message"),
+            "expected `e.Message` (PascalCase): {}",
+            output
+        );
+        assert!(
+            !output.contains("e.message"),
+            "lowered output must not contain camelCase `e.message`: {}",
+            output
+        );
+    }
+
     // Issue #27: a multi-line PrSM string (typically from a raw string
     // literal `"""..."""`) lowers to a C# verbatim string `@"..."`.
     // The verbatim form preserves newlines without `\n` sequences and
