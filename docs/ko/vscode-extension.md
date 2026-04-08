@@ -13,7 +13,7 @@ PrSM VS Code 확장(`prsm-lang`)은 `.prsm` 파일의 전체 편집 워크플로
 
 VS Code Marketplace에서 **PrSM** 검색, 또는 `.vsix` 파일에서 설치:
 
-1. [GitHub Releases](https://github.com/29thnight/PrSM/releases)에서 `prsm-lang.prsm-lang-x.x.x.vsix` 다운로드
+1. [GitHub Releases](https://github.com/29thnight/PrSM/releases)에서 `parkyoungung.prsm-lang-x.x.x.vsix` 다운로드
 2. VS Code에서: **확장 > ··· > VSIX에서 설치**
 
 MSI 인스톨러는 VS Code가 감지되면 확장을 자동으로 설치합니다.

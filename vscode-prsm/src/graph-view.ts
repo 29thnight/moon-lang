@@ -55,7 +55,7 @@ function getUnityTypes(): Set<string> {
     try {
         const candidates: string[] = [];
         if (_extensionPath) candidates.push(path.join(_extensionPath, 'data', 'unity-types.json'));
-        const ext = vscode.extensions.getExtension('prsm-lang.prsm-lang');
+        const ext = vscode.extensions.getExtension('parkyoungung.prsm-lang');
         if (ext) candidates.push(path.join(ext.extensionPath, 'data', 'unity-types.json'));
 
         for (const jsonPath of candidates) {

@@ -13,7 +13,7 @@ The PrSM VS Code extension (`prsm-lang`) provides a full editing workflow for `.
 
 Install from the VS Code Marketplace by searching **PrSM**, or from a `.vsix` file:
 
-1. Download `prsm-lang.prsm-lang-x.x.x.vsix` from [GitHub Releases](https://github.com/29thnight/PrSM/releases)
+1. Download `parkyoungung.prsm-lang-x.x.x.vsix` from [GitHub Releases](https://github.com/29thnight/PrSM/releases)
 2. In VS Code: **Extensions > ··· > Install from VSIX**
 
 The MSI installer also installs the extension automatically if VS Code is detected.

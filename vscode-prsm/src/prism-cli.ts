@@ -88,7 +88,7 @@ function getCompilerPath(): string {
 
     const config = vscode.workspace.getConfiguration('prsm');
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    const extensionPath = vscode.extensions.getExtension('prsm-lang.prsm-lang')?.extensionPath;
+    const extensionPath = vscode.extensions.getExtension('parkyoungung.prsm-lang')?.extensionPath;
 
     cachedCompilerPath = resolveCompilerPathFromContext({
         userOverride: config.get<string>('compilerPath', ''),
