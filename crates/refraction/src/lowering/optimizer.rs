@@ -98,6 +98,7 @@ fn optimize_class(class: &mut CsClass, options: OptimizerOptions, report: &mut O
                 report,
                 options,
                 new_fields: &mut new_fields,
+                linq_counter: 0,
             };
             optimize_block(body, &mut hot_ctx);
         }
@@ -122,6 +123,10 @@ struct HotPathContext<'a> {
     report: &'a mut OptimizerReport,
     options: OptimizerOptions,
     new_fields: &'a mut Vec<CsMember>,
+    /// Issue #92: monotonic counter for LINQ rewrite loop variables
+    /// so two rewrites in the same method do not collide on a shared
+    /// `__opt_i` local name.
+    linq_counter: u32,
 }
 
 fn optimize_block(stmts: &mut Vec<CsStmt>, ctx: &mut HotPathContext) {
@@ -498,6 +503,31 @@ fn parse_select_to_list(expr: &str) -> Option<(String, String)> {
     Some((source.to_string(), projection.to_string()))
 }
 
+/// Issue #97: extract `T` from a declared C# type string like
+/// `System.Collections.Generic.List<int>` or `List<int>`. Returns
+/// `"object"` as a conservative fallback when the declared type is
+/// not a recognizable list-like generic.
+fn extract_list_element_type(declared_ty: &str) -> String {
+    let trimmed = declared_ty.trim();
+    // Try the fully-qualified form first, then the short form.
+    for prefix in [
+        "System.Collections.Generic.List<",
+        "List<",
+        "System.Collections.Generic.IList<",
+        "IList<",
+        "System.Collections.Generic.IEnumerable<",
+        "IEnumerable<",
+    ] {
+        if let Some(rest) = trimmed.strip_prefix(prefix) {
+            if let Some(inner) = rest.strip_suffix('>') {
+                // Guard against nested generics carrying trailing whitespace.
+                return inner.trim().to_string();
+            }
+        }
+    }
+    "object".into()
+}
+
 fn matched_paren_end(s: &str, open: usize) -> Option<usize> {
     let bytes = s.as_bytes();
     if bytes.get(open)? != &b'(' {
@@ -539,10 +569,17 @@ fn apply_linq_rewrite(
         declared_ty.clone()
     };
 
-    let temp_init = match &operation {
-        LinqOp::Where { .. } => format!("new System.Collections.Generic.List<object>()"),
-        LinqOp::Select { .. } => format!("new System.Collections.Generic.List<object>()"),
-    };
+    // Issue #97: infer the element type from the declared target type
+    // so `val xs: List<Int> = ...Where().ToList()` rewrites to
+    // `new List<int>()` instead of `new List<object>()`, avoiding the
+    // boxing allocation the optimizer was supposed to eliminate.
+    // Fall back to `object` only when the declared type isn't a
+    // recognizable `List<T>` shape.
+    let element_ty = extract_list_element_type(&declared_ty);
+    let temp_init = format!(
+        "new System.Collections.Generic.List<{}>()",
+        element_ty
+    );
 
     new_stmts.push(CsStmt::VarDecl {
         ty: final_ty,
@@ -550,7 +587,10 @@ fn apply_linq_rewrite(
         init: temp_init,
         source_span: Some(span),
     });
-    let counter = "__opt_i".to_string();
+    // Issue #92: use a unique counter name per LINQ rewrite so two
+    // rewrites in the same method don't collide on `__opt_i`.
+    let counter = format!("__opt_i_{}", ctx.linq_counter);
+    ctx.linq_counter += 1;
     let body: Vec<CsStmt> = match &operation {
         LinqOp::Where { predicate } => vec![CsStmt::If {
             cond: invoke_lambda(predicate, &format!("{}[{}]", source_collection, counter)),
@@ -864,5 +904,66 @@ mod tests {
     fn replace_word_does_not_match_substrings() {
         assert_eq!(replace_word("element", "e", "X"), "element");
         assert_eq!(replace_word("e + e2", "e", "X"), "X + e2");
+    }
+
+    // Issue #92: two LINQ rewrites in the same method must use
+    // distinct counter names so the emitted C# does not redeclare
+    // `int __opt_i` in the same scope.
+    #[test]
+    fn linq_rewrites_use_unique_counter_names() {
+        let stmt1 = CsStmt::VarDecl {
+            ty: "System.Collections.Generic.List<int>".into(),
+            name: "alive".into(),
+            init: "items.Where(e => e > 0).ToList()".into(),
+            source_span: Some(default_span()),
+        };
+        let stmt2 = CsStmt::VarDecl {
+            ty: "System.Collections.Generic.List<int>".into(),
+            name: "doubled".into(),
+            init: "people.Select(p => p * 2).ToList()".into(),
+            source_span: Some(default_span()),
+        };
+        let method = make_method("Update", vec![stmt1, stmt2]);
+        let mut file = class_with(method);
+        let _report = optimize(&mut file, OptimizerOptions::default());
+
+        let update_body = file
+            .class
+            .members
+            .iter()
+            .find_map(|m| match m {
+                CsMember::Method { name, body, .. } if name == "Update" => Some(body),
+                _ => None,
+            })
+            .expect("Update method");
+
+        // Collect counter names from For loop init clauses.
+        let mut counter_names = Vec::new();
+        for stmt in update_body {
+            if let CsStmt::For { init, .. } = stmt {
+                counter_names.push(init.clone());
+            }
+        }
+        // Both rewrites must yield unique `__opt_i_N` counters.
+        assert_eq!(counter_names.len(), 2, "expected two for loops, got {counter_names:?}");
+        assert!(counter_names[0] != counter_names[1], "counter names must differ: {counter_names:?}");
+    }
+
+    // Issue #97: LINQ rewrite should use the declared element type,
+    // not `List<object>`, to avoid boxing value types.
+    #[test]
+    fn linq_rewrite_uses_declared_element_type() {
+        assert_eq!(
+            extract_list_element_type("System.Collections.Generic.List<int>"),
+            "int"
+        );
+        assert_eq!(
+            extract_list_element_type("List<float>"),
+            "float"
+        );
+        assert_eq!(
+            extract_list_element_type("SomethingUnknown"),
+            "object"
+        );
     }
 }

@@ -1179,6 +1179,43 @@ fn lower_event_member(m: &Member) -> Vec<CsMember> {
 
 /// Compute the C# delegate type for an event from its function type ref.
 /// `(Int) => Unit` → `System.Action<int>`; `() => Unit` → `System.Action`.
+/// Issue #95: look up an event expression's declared TypeRef in the
+/// lowering type environment and convert it to a C# delegate type.
+/// Returns `None` when the event is external (e.g. a Unity event
+/// accessed via `button.onClick`) or when the declared type is not
+/// a PrSM function type — in both cases the caller falls back to
+/// the default `System.Action`, which matches the `UnityAction`
+/// signature that Unity events expose through `AddListener`.
+///
+/// We deliberately only resolve `TypeRef::Function` shapes (from
+/// `event onFoo: (Int) => Unit` declarations). Unity `UnityEvent`
+/// and `UnityEvent<T>` fields are `TypeRef::Simple`/`Generic` and
+/// must NOT be returned as the handler delegate — the handler
+/// callback type is `UnityAction`/`UnityAction<T>`, which happens
+/// to be compatible with `System.Action`/`System.Action<T>`.
+fn resolve_event_delegate_type(event: &Expr, env: &LoweringTypeEnv) -> Option<String> {
+    let looked_up = match event {
+        // Case 1: bare identifier — `onDamaged` — directly in env.
+        Expr::Ident(name, _) => env.get(name),
+        // Case 2: `this.onDamaged` — strip the `this` receiver.
+        Expr::MemberAccess { receiver, name, .. }
+            if matches!(receiver.as_ref(), Expr::This(_)) =>
+        {
+            env.get(name)
+        }
+        _ => None,
+    }?;
+    // Only PrSM function types (`(Args) => Return`) lower to an
+    // exact-match delegate; everything else must fall through to
+    // the default `System.Action` so the caller supplies a matching
+    // UnityAction-compatible closure.
+    if matches!(looked_up, TypeRef::Function { .. }) {
+        Some(event_delegate_type(looked_up))
+    } else {
+        None
+    }
+}
+
 fn event_delegate_type(ty: &TypeRef) -> String {
     if let TypeRef::Function { param_types, return_type, .. } = ty {
         let is_void = matches!(
@@ -1600,6 +1637,13 @@ fn collect_member_type_env(members: &[Member]) -> LoweringTypeEnv {
             | Member::Parent { name, ty, .. }
             | Member::Property { name, ty, .. }
             | Member::BindProperty { name, ty, .. } => {
+                env.insert(name.clone(), ty.clone());
+            }
+            // Issue #95: also register `event` members in the type
+            // environment so the listen-lowering pass can resolve
+            // their function types (e.g. `(Float) => Unit`) for
+            // correct delegate-field generation.
+            Member::Event { name, ty, .. } => {
                 env.insert(name.clone(), ty.clone());
             }
             Member::Field {
@@ -4520,9 +4564,24 @@ fn lower_lambda_expr(
 
 /// Lower an extension declaration to a static class with extension methods.
 fn lower_extension(target_type: &TypeRef, members: &[Member]) -> (CsClass, Vec<CsClass>) {
+    // Issue #94: generate unique class names for generic extensions.
+    // `extend List<Int>` and `extend List<String>` previously both
+    // produced `ListExtensions`, colliding at the C# level. Include
+    // the sanitized type arguments so each instantiation gets its own
+    // static class.
     let target_name = match target_type {
         TypeRef::Simple { name, .. } => name.clone(),
-        TypeRef::Generic { name, .. } => name.clone(),
+        TypeRef::Generic { name, type_args, .. } => {
+            if type_args.is_empty() {
+                name.clone()
+            } else {
+                let args: Vec<String> = type_args
+                    .iter()
+                    .map(|t| sanitize_for_class_name(&lower_type(t)))
+                    .collect();
+                format!("{}Of{}", name, args.join("And"))
+            }
+        }
         TypeRef::Qualified { name, .. } => name.clone(),
         _ => "Extension".to_string(),
     };
@@ -4553,9 +4612,12 @@ fn lower_extension(target_type: &TypeRef, members: &[Member]) -> (CsClass, Vec<C
                     });
                 }
                 let cs_body = lower_func_body_ext(body, &HashMap::new(), true);
+                // Issue #93: honor the declared visibility instead of
+                // hardcoding `public static`. C# extension methods can
+                // be private, internal, or public; all are valid.
                 cs_members.push(CsMember::Method {
                     attributes: vec![],
-                    modifiers: format!("public static"),
+                    modifiers: format!("{} static", lower_visibility(*visibility)),
                     return_ty: ret,
                     name: name.clone(),
                     params: cs_params,
@@ -5233,6 +5295,38 @@ fn capitalize(s: &str) -> String {
     }
 }
 
+/// Issue #94: sanitize a C# type name into a form safe for use as
+/// a class name suffix. Non-alphanumeric characters (including the
+/// dots in qualified names and angle brackets in nested generics)
+/// become underscores, and a leading underscore is stripped if
+/// present to keep the result valid.
+fn sanitize_for_class_name(ty: &str) -> String {
+    let mut out = String::with_capacity(ty.len());
+    for ch in ty.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    // Collapse runs of underscores to a single underscore and trim
+    // leading/trailing underscores for readability.
+    let mut compact = String::with_capacity(out.len());
+    let mut prev_underscore = false;
+    for ch in out.chars() {
+        if ch == '_' {
+            if !prev_underscore {
+                compact.push(ch);
+            }
+            prev_underscore = true;
+        } else {
+            compact.push(ch);
+            prev_underscore = false;
+        }
+    }
+    compact.trim_matches('_').to_string()
+}
+
 // ---------------------------------------------------------------------------
 // v2 listen lifetime management — Component-level subscription tracking
 // ---------------------------------------------------------------------------
@@ -5244,6 +5338,13 @@ struct SubscriptionRecord {
     field_name: String,
     /// Lowered event expression, e.g. `button.onClick`.
     event_expr: String,
+    /// Issue #95: C# delegate type for the handler field, e.g.
+    /// `System.Action` for a zero-param event or
+    /// `System.Action<float>` for `slider.onValueChanged`. Populated
+    /// at the listen-statement lowering site via
+    /// `event_delegate_type()`. Falls back to `System.Action` when
+    /// the event type cannot be resolved.
+    delegate_type: String,
     /// How the subscription is cleaned up.
     cleanup: SubscriptionCleanup,
     /// Source span of the original `listen` statement (for source map v2 sugar mapping).
@@ -5339,9 +5440,23 @@ fn lower_stmt_with_ctx(
                         },
                         _ => unreachable!(),
                     };
+                    // Issue #95: resolve the event's declared TypeRef
+                    // into a matching C# delegate type. For events
+                    // declared as `event onFoo: (Int) => Unit` inside
+                    // the same component, member_types carries the
+                    // `Function` TypeRef we can feed to
+                    // `event_delegate_type()`. Unity events like
+                    // `button.onClick` (UnityAction-shaped) are
+                    // external, so the member_types lookup misses —
+                    // fall back to `System.Action` which matches the
+                    // AddListener<Action> form the lowering emits for
+                    // zero-arg events.
+                    let delegate_type = resolve_event_delegate_type(event, &ctx.member_types)
+                        .unwrap_or_else(|| "System.Action".to_string());
                     ctx.records.push(SubscriptionRecord {
                         field_name: handler.clone(),
                         event_expr: event_str.clone(),
+                        delegate_type,
                         cleanup,
                         origin_span: source_span,
                     });
@@ -5493,10 +5608,14 @@ fn lower_listen_stmt(
 
 /// Generate the private System.Action field members for all subscriptions.
 fn subscription_fields(records: &[SubscriptionRecord]) -> Vec<CsMember> {
+    // Issue #95: use each record's resolved delegate type so events
+    // with parameters (e.g. `slider.onValueChanged: (Float) => Unit`)
+    // get a matching `System.Action<float>` backing field instead of
+    // the bare `System.Action` that silently miscompiled.
     records.iter().map(|r| CsMember::Field {
         attributes: vec![],
         modifiers: "private".into(),
-        ty: "System.Action".into(),
+        ty: r.delegate_type.clone(),
         name: r.field_name.clone(),
         init: None,
     }).collect()

@@ -1,6 +1,6 @@
 {
   "name": "com.prsm.editor",
-  "version": "3.4.0",
+  "version": "3.5.0",
   "displayName": "PrSM Language",
   "description": "Unity Editor integration for the PrSM scripting language",
   "unity": "2022.3",

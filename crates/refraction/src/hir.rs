@@ -233,7 +233,24 @@ impl HirProject {
 
         if let Some(reference) = file.find_reference_at(line, col) {
             if let Some(definition_id) = reference.resolved_definition_id {
+                // Issue #96: the file-local lookup below catches the
+                // common same-file case (the definition lives in the
+                // same source as the reference). For cross-file
+                // references the ID may collide numerically with an
+                // unrelated definition in another file because every
+                // Analyzer restarts `next_definition_id` from 1.
+                // Prefer the candidate qualified name (which is
+                // globally unique) before attempting the ID lookup,
+                // then fall back to a project-wide ID search.
                 if let Some(definition) = file.find_definition(definition_id) {
+                    return Some(definition);
+                }
+                if let Some(definition) = self
+                    .files
+                    .iter()
+                    .flat_map(|f| &f.definitions)
+                    .find(|d| d.id == definition_id)
+                {
                     return Some(definition);
                 }
             }

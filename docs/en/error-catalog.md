@@ -542,7 +542,9 @@ data class Empty()  // W005
 
 ## Language 4 diagnostics (since PrSM 4)
 
-PrSM 4 introduces 47 new diagnostic codes (E100–E146, W020–W032) covering exceptions, lambdas, modifiers, casts, properties, structs, async, Burst, and the v4 pattern sugars. The condition for each is summarized below; full prose entries follow the same format as the codes above.
+PrSM 4 introduces ~50 new diagnostic codes (E100–E146 plus the v4 warning band) covering exceptions, lambdas, modifiers, casts, properties, structs, async, Burst, and the v4 pattern sugars. The condition for each is summarized below; full prose entries follow the same format as the codes above.
+
+> **Note (v3.5.0, issue #99):** Several warning codes that had been listed in this section were never actually emitted by the analyzer. They have been removed from this catalog and moved to the "Planned warnings" section at the bottom of the file. Only warnings the analyzer actively produces are listed in the active tables.
 
 ### Errors
 
@@ -596,21 +598,13 @@ PrSM 4 introduces 47 new diagnostic codes (E100–E146, W020–W032) covering ex
 | E145 | DX | Assignment used as condition expression |
 | E146 | DX | Common API misuse detected |
 
-### Warnings
+### Warnings (actively emitted)
 
 | Code | Feature | Condition |
 |------|---------|-----------|
-| W020 | try/catch | Empty `catch` block |
-| W021 | Cast | `as?` result never null-checked |
-| W022 | struct | Large struct (over 16 bytes) |
-| W023 | Range pattern | Overlapping range patterns in `when` |
-| W024 | Interface | Default interface method references instance state |
 | W025 | async | `async func` that never uses `await` |
 | W026 | Optimizer | String allocation in hot path (cached by `opt.string`) |
 | W027 | Optimizer | LINQ chain in `Update`/`FixedUpdate` (rewritten by `opt.linq`) |
-| W028 | Burst | Boxing detected in `@burst` method |
-| W029 | State machine | State with no outgoing transitions (dead state) |
-| W030 | Command | `command` declared without a `canExecute` guard |
 | W031 | bind | `bind` property never read |
 | W032 | Debugger | Source map generation failed for a file (non-fatal) |
 
@@ -674,5 +668,39 @@ PrSM 5 introduces 42 new error codes (E147–E188) and 5 new warning codes (W033
 | W033 | yield | coroutine declares `Seq<T>` but never yields T |
 | W034 | preprocessor | unknown symbol passed through verbatim |
 | W035 | UniTask | `unitask` backend requested but package not found |
-| W036 | opt.structcopy | rewritten as `ref readonly` |
+| W036 | smart cast | `is` test against an unrelated type (statically false) |
 | W037 | relational pattern | unreachable subsequent arm |
+
+---
+
+## Additional error codes (v3.x post-spec)
+
+These codes were added in post-release audit rounds and are not part of the original lang-4/lang-5 spec tables. They are listed here for completeness.
+
+| Code | Feature | Condition |
+|------|---------|-----------|
+| E016 | Scope | Duplicate top-level declaration name within a file |
+| E020 | Type check | Type mismatch (shared across initializers, returns, assignments) |
+| E190 | ref local | `val ref` / `var ref` without an explicit type annotation (C# does not support `ref readonly var`) |
+| E191 | Component | `require` / `optional` / `child` / `parent` field on a non-Component type |
+| E200 | I/O | File read error during cache / project walk |
+| E204 | Build | Case-insensitive output filename collision (v3.4.0, #90) |
+| E211 | Operator | Operator overload parameter cannot carry `ref` / `out` / `vararg` (v3.4.0, #88) |
+| E212 | State machine | Duplicate `enter` / `exit` block in a single state (v3.5.0, #98) |
+
+---
+
+## Planned warnings (not yet implemented)
+
+These warning codes were listed in earlier revisions of the catalog but are not currently emitted by the analyzer. They remain planned features; any open tickets are tracked in the issue tracker.
+
+| Code | Feature | Condition |
+|------|---------|-----------|
+| W020 | try/catch | Empty `catch` block |
+| W021 | Cast | `as?` result never null-checked |
+| W022 | struct | Large struct (over 16 bytes) |
+| W023 | Range pattern | Overlapping range patterns in `when` |
+| W024 | Interface | Default interface method references instance state |
+| W028 | Burst | Boxing detected in `@burst` method |
+| W029 | State machine | State with no outgoing transitions (dead state) |
+| W030 | Command | `command` declared without a `canExecute` guard |

@@ -1553,15 +1553,39 @@ impl Parser {
 
         while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
             if self.check_contextual("enter") {
+                // Issue #98: reject duplicate `enter { }` blocks in
+                // the same state. Previously the second block
+                // silently overwrote the first, losing user code
+                // with no diagnostic.
+                let enter_span = self.peek_span();
                 self.advance(); // consume 'enter'
                 self.skip_newlines();
                 let block = self.parse_block()?;
+                if enter.is_some() {
+                    return Err(ParseError {
+                        message: format!(
+                            "E212: duplicate 'enter' block in state '{}'. A state may declare at most one 'enter' block.",
+                            name
+                        ),
+                        span: enter_span,
+                    });
+                }
                 enter = Some(block);
                 self.skip_newlines();
             } else if self.check_contextual("exit") {
+                let exit_span = self.peek_span();
                 self.advance(); // consume 'exit'
                 self.skip_newlines();
                 let block = self.parse_block()?;
+                if exit.is_some() {
+                    return Err(ParseError {
+                        message: format!(
+                            "E212: duplicate 'exit' block in state '{}'. A state may declare at most one 'exit' block.",
+                            name
+                        ),
+                        span: exit_span,
+                    });
+                }
                 exit = Some(block);
                 self.skip_newlines();
             } else if self.check_contextual("on") {
@@ -6414,5 +6438,61 @@ component PlayerHealth : MonoBehaviour {
         } else {
             panic!("expected component");
         }
+    }
+
+    // Issue #98: the parser must reject duplicate `enter { }` or
+    // `exit { }` blocks within a single state. Previously the
+    // second block silently overwrote the first, losing user code.
+    #[test]
+    fn test_duplicate_enter_block_rejected() {
+        let src = r#"component AI : MonoBehaviour {
+  state machine ai {
+    state Idle {
+      enter { log("first") }
+      enter { log("second") }
+    }
+  }
+}"#;
+        let (_file, errors) = parse(src);
+        assert!(
+            errors.iter().any(|e| e.message.contains("E212") && e.message.contains("enter")),
+            "expected E212 duplicate enter block, got {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_duplicate_exit_block_rejected() {
+        let src = r#"component AI : MonoBehaviour {
+  state machine ai {
+    state Idle {
+      exit { log("first") }
+      exit { log("second") }
+    }
+  }
+}"#;
+        let (_file, errors) = parse(src);
+        assert!(
+            errors.iter().any(|e| e.message.contains("E212") && e.message.contains("exit")),
+            "expected E212 duplicate exit block, got {:?}",
+            errors
+        );
+    }
+
+    #[test]
+    fn test_single_enter_exit_block_still_parses() {
+        let src = r#"component AI : MonoBehaviour {
+  state machine ai {
+    state Idle {
+      enter { log("enter") }
+      exit { log("exit") }
+      on go => Active
+    }
+    state Active {
+      on stop => Idle
+    }
+  }
+}"#;
+        let _ = parse_ok(src);
     }
 }

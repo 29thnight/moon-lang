@@ -3420,4 +3420,102 @@ func calculateForces() {
             output
         );
     }
+
+    // Issue #93: extension method visibility must be honored, not
+    // hardcoded to `public static`.
+    #[test]
+    fn test_extension_method_private_visibility_preserved() {
+        let src = r#"extend String {
+  private func myHelper(): Unit {
+    log("internal")
+  }
+}"#;
+        let output = compile(src);
+        assert!(
+            output.contains("private static void myHelper"),
+            "extension method must honor private visibility: {}",
+            output
+        );
+    }
+
+    #[test]
+    fn test_extension_method_public_visibility_preserved() {
+        let src = r#"extend String {
+  public func capitalize(): String {
+    return this
+  }
+}"#;
+        let output = compile(src);
+        assert!(
+            output.contains("public static"),
+            "extension method must honor public visibility: {}",
+            output
+        );
+    }
+
+    // Issue #94: generic extension class names must encode the type
+    // parameters so `extend List<Int>` and `extend List<String>` do
+    // not collide.
+    #[test]
+    fn test_generic_extension_class_name_includes_type_args() {
+        let src = r#"extend List<Int> {
+  func sumAll(): Int {
+    return 0
+  }
+}"#;
+        let output = compile(src);
+        // The generated class name must NOT be the bare "ListExtensions".
+        // It should include the type parameter in some form.
+        assert!(
+            output.contains("ListOfInt") || output.contains("ListOfint")
+                || output.contains("ListOfIntExtensions")
+                || output.contains("ListOfintExtensions"),
+            "generic extension class name should encode type arg: {}",
+            output
+        );
+    }
+
+    // Issue #95: listen handler field type must match the event's
+    // declared function type. For a `(Int) => Unit` event, the
+    // backing field should be `System.Action<int>`, not the bare
+    // `System.Action`.
+    #[test]
+    fn test_listen_handler_field_uses_parameterized_delegate() {
+        let src = r#"component UI : MonoBehaviour {
+  event onDamaged: (Int) => Unit
+
+  awake {
+    listen onDamaged until disable { dmg =>
+      log(dmg)
+    }
+  }
+}"#;
+        let output = compile(src);
+        assert!(
+            output.contains("System.Action<int>"),
+            "parameterized event listen should yield System.Action<int> handler field: {}",
+            output
+        );
+    }
+
+    // Issue #95 (cont): zero-argument events continue to use the
+    // bare `System.Action` handler field.
+    #[test]
+    fn test_listen_handler_field_zero_arg_uses_plain_action() {
+        let src = r#"component UI : MonoBehaviour {
+  event onStart: () => Unit
+
+  awake {
+    listen onStart until disable {
+      log("begin")
+    }
+  }
+}"#;
+        let output = compile(src);
+        assert!(
+            output.contains("private System.Action _prsm_h"),
+            "zero-arg event listen should yield System.Action handler field: {}",
+            output
+        );
+    }
 }
