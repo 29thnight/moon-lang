@@ -5236,11 +5236,34 @@ impl Parser {
                 }
                 _ => {
                     let tok = self.advance();
-                    if should_insert_raw_space(previous_kind.as_ref(), &tok.kind) {
+                    let tok_kind = tok.kind.clone();
+                    if should_insert_raw_space(previous_kind.as_ref(), &tok_kind) {
                         code.push(' ');
                     }
-                    code.push_str(&token_to_source_text(&tok.kind));
-                    previous_kind = Some(tok.kind.clone());
+
+                    // PascalCase method calls in intrinsic blocks:
+                    // `.identifier(` → method call on a PrSM-generated type
+                    // whose methods are PascalCase in C#. Apply the same
+                    // transformation so users can write camelCase in
+                    // intrinsic blocks. Field/property access (no `(`) is
+                    // left as-is since PrSM properties keep their casing.
+                    let is_method_call = matches!(
+                        &previous_kind,
+                        Some(TokenKind::Dot) | Some(TokenKind::QuestionDot)
+                    ) && matches!(&tok_kind, TokenKind::Identifier(_))
+                      && matches!(self.peek(), TokenKind::LParen);
+
+                    if is_method_call {
+                        if let TokenKind::Identifier(name) = &tok_kind {
+                            code.push_str(&raw_pascal_case(name));
+                        } else {
+                            code.push_str(&token_to_source_text(&tok_kind));
+                        }
+                    } else {
+                        code.push_str(&token_to_source_text(&tok_kind));
+                    }
+
+                    previous_kind = Some(tok_kind);
                 }
             }
         }
@@ -5315,6 +5338,48 @@ fn pascal_attr_case(name: &str) -> String {
     }
 }
 
+/// Inside a string literal that appears in an intrinsic block, PascalCase
+/// any `.camelCase(` method-call pattern. This handles C# string
+/// interpolation like `$"HP: {player.getHp()}"` where `getHp` needs to
+/// become `GetHp` to match the PascalCase-lowered definition.
+fn pascal_case_methods_in_string(s: &str) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '.' && i + 1 < chars.len() && chars[i + 1].is_ascii_lowercase() {
+            let start = i + 1;
+            let mut end = start;
+            while end < chars.len() && (chars[end].is_ascii_alphanumeric() || chars[end] == '_') {
+                end += 1;
+            }
+            if end < chars.len() && chars[end] == '(' {
+                out.push('.');
+                out.push(chars[start].to_ascii_uppercase());
+                for j in (start + 1)..end {
+                    out.push(chars[j]);
+                }
+                i = end;
+                continue;
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
+/// PascalCase a camelCase name (first char to uppercase).
+/// Used by `parse_raw_brace_block` to convert method calls in intrinsic
+/// blocks to match PrSM's PascalCase lowering convention.
+fn raw_pascal_case(name: &str) -> String {
+    let mut chars = name.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
+
 fn token_to_source_text(kind: &TokenKind) -> String {
     match kind {
         TokenKind::IntLiteral(n) => n.to_string(),
@@ -5322,7 +5387,7 @@ fn token_to_source_text(kind: &TokenKind) -> String {
         TokenKind::DurationLiteral(n) => format!("{n}s"),
         TokenKind::BoolTrue => "true".into(),
         TokenKind::BoolFalse => "false".into(),
-        TokenKind::StringLiteral(s) => format!("\"{s}\""),
+        TokenKind::StringLiteral(s) => format!("\"{}\"", pascal_case_methods_in_string(s)),
         TokenKind::Identifier(s) => s.clone(),
         TokenKind::Using => "using".into(),
         TokenKind::Val => "val".into(),

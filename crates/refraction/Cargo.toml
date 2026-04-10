@@ -1,6 +1,6 @@
 [package]
 name = "refraction"
-version = "3.5.4"
+version = "3.5.5"
 edition = "2021"
 description = "Refraction compiler for PrSM — Unity-first scripting language"
 license = "MIT"

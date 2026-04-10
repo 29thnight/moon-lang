@@ -3800,6 +3800,9 @@ fn lower_expr_with_expected_type(
                 ("input", "getKeyDown") => "Input.GetKeyDown".into(),
                 ("input", "getButton") => "Input.GetButton".into(),
                 ("input", "getButtonDown") => "Input.GetButtonDown".into(),
+                ("input", "getMouseButton") => "Input.GetMouseButton".into(),
+                ("input", "getMouseButtonDown") => "Input.GetMouseButtonDown".into(),
+                ("input", "getMouseButtonUp") => "Input.GetMouseButtonUp".into(),
                 ("quat", "euler") => "Quaternion.Euler".into(),
                 ("Time", "deltaTime") => "Time.deltaTime".into(),
                 // Duration sugar: expr.s → just expr (seconds value)
@@ -5142,6 +5145,9 @@ fn map_method_sugar(receiver: &str, method: &str) -> Option<String> {
         ("Input", "getKeyDown") | ("input", "getKeyDown") => Some("Input.GetKeyDown".into()),
         ("Input", "getButton") | ("input", "getButton") => Some("Input.GetButton".into()),
         ("Input", "getButtonDown") | ("input", "getButtonDown") => Some("Input.GetButtonDown".into()),
+        ("Input", "getMouseButton") | ("input", "getMouseButton") => Some("Input.GetMouseButton".into()),
+        ("Input", "getMouseButtonDown") | ("input", "getMouseButtonDown") => Some("Input.GetMouseButtonDown".into()),
+        ("Input", "getMouseButtonUp") | ("input", "getMouseButtonUp") => Some("Input.GetMouseButtonUp".into()),
         ("quat", "euler") => Some("Quaternion.Euler".into()),
         _ => None,
     }
