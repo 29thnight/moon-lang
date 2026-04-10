@@ -1770,8 +1770,9 @@ _prsmInput.actions["Gameplay/Fire"].WasPressedThisFrame()
 
 컴파일러가 component에서 입력 편의 구문을 감지하면 다음을 생성해야 한다:
 
-1. private 필드: `private PlayerInput _prsmInput;`
-2. 사용자 문장 전에 생성된 `Awake()` 본문에 병합되는 `GetComponent<PlayerInput>()` 호출.
+1. class attribute: `[UnityEngine.RequireComponent(typeof(UnityEngine.InputSystem.PlayerInput))]`
+2. private 필드: `private UnityEngine.InputSystem.PlayerInput _prsmInput;`
+3. 사용자 문장 전에 생성된 `Awake()` 본문에 병합되는 `GetComponent<UnityEngine.InputSystem.PlayerInput>()` 호출.
 
 ### 10.13 `intrinsic` 블록
 
@@ -1914,7 +1915,7 @@ public float speed => _speed;
 component가 `require`, `optional`, `child`, `parent` 필드를 선언하면, 컴파일러는 다음 단계 순서를 가진 단일 `Awake()` 메서드를 생성해야 한다:
 
 1. **1단계 -- 의존성 해석.** 선언 순서대로 모든 주입 필드를 해석한다. `require` 필드는 null 검사를 받으며, 실패 시 오류를 로그하고 `enabled = false; return;`을 통해 컴포넌트를 비활성화한다.
-2. **2단계 -- 입력 인프라.** 입력 편의 구문이 있으면 `_prsmInput = GetComponent<PlayerInput>()`를 내보낸다.
+2. **2단계 -- 입력 인프라.** 입력 편의 구문이 있으면 `_prsmInput = GetComponent<UnityEngine.InputSystem.PlayerInput>()`를 내보낸다.
 3. **3단계 -- Listen 등록.** 모든 `listen` 문에 대한 `AddListener` 호출을 내보낸다.
 4. **4단계 -- 사용자 `awake` 본문.** 사용자의 `awake` 블록이 있으면 내보낸다.
 
@@ -2021,10 +2022,12 @@ switch (result.Tag) {
 ### 12.9 Input System 로우어링
 component가 Input System 편의 구문을 사용하면, 컴파일러는:
 
-1. private 필드를 내보낸다: `private PlayerInput _prsmInput;`
-2. Awake 2단계에서 `_prsmInput = GetComponent<PlayerInput>();`를 내보낸다.
-3. 각 `input.action("Name").accessor`를 `_prsmInput.actions["Name"].Method()`로 대체한다.
-4. 플레이어 형태 `input.player("Map").action("Name").accessor`의 경우 키를 `"Map/Name"`으로 구성한다.
+1. 생성된 component 타입에 `[UnityEngine.RequireComponent(typeof(UnityEngine.InputSystem.PlayerInput))]`를 내보낸다.
+2. private 필드를 내보낸다: `private UnityEngine.InputSystem.PlayerInput _prsmInput;`
+3. Awake 2단계에서 `_prsmInput = GetComponent<UnityEngine.InputSystem.PlayerInput>();`를 내보낸다.
+4. 각 `input.action("Name").accessor`를 `_prsmInput.actions["Name"].Method()`로 대체한다.
+5. 플레이어 형태 `input.player("Map").action("Name").accessor`의 경우 키를 `"Map/Name"`으로 구성한다.
+6. 직렬화된 `InputActionAsset` 필드에 `@inputActions(...)`가 붙어 있으면, Awake 2단계에서 `_prsmInput.actions = <field>;`를 내보내고 `defaultMap`이 제공된 경우 `_prsmInput.defaultActionMap = "<value>";`도 함께 내보낸다.
 
 ---
 

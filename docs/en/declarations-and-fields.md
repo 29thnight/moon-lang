@@ -87,6 +87,11 @@ serialize weaponSlot: GameObject = null
 
 Supported decorators: `@header(label)`, `@tooltip(text)`, `@range(min, max)`, `@space`, `@hideInInspector`.
 
+For Input System asset wiring, a serialized `InputActionAsset` field may also
+carry the compiler-only annotation `@inputActions(defaultMap: "Gameplay")`.
+This annotation configures generated `PlayerInput` wiring rather than emitting a
+C# attribute.
+
 ## `val` and `var`
 
 - `val` — immutable; cannot be reassigned after initialization

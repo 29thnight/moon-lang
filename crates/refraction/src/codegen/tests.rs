@@ -483,6 +483,48 @@ component PlayerHealth : MonoBehaviour {
     // ── T2: listen multiple subscriptions & ordering ──────────────
 
     #[test]
+    fn test_input_actions_annotation_wires_player_input_asset() {
+        let src = r#"component Foo : MonoBehaviour {
+  @inputActions(defaultMap: "Gameplay")
+  serialize controls: InputActionAsset
+
+  update {
+    if input.action("Jump").pressed {
+      jump()
+    }
+  }
+
+  func jump(): Unit {}
+}"#;
+        let output = compile(src);
+        assert!(
+            output.contains("[UnityEngine.RequireComponent(typeof(UnityEngine.InputSystem.PlayerInput))]"),
+            "should add RequireComponent for PlayerInput: {}",
+            output
+        );
+        assert!(
+            output.contains("using UnityEngine.InputSystem;"),
+            "should add UnityEngine.InputSystem using for InputActionAsset field: {}",
+            output
+        );
+        assert!(
+            output.contains("_prsmInput.actions = controls;"),
+            "should wire annotated asset into PlayerInput.actions: {}",
+            output
+        );
+        assert!(
+            output.contains("_prsmInput.defaultActionMap = \"Gameplay\";"),
+            "should wire defaultActionMap from annotation: {}",
+            output
+        );
+        assert!(
+            !output.contains("[InputActions"),
+            "compiler-only annotation must not lower to a C# attribute: {}",
+            output
+        );
+    }
+
+    #[test]
     fn test_listen_multiple_until_disable() {
         let src = r#"component Foo : MonoBehaviour {
   serialize buttonA: Button

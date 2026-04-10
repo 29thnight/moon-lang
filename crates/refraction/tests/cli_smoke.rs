@@ -3538,7 +3538,10 @@ exclude = []
     // PlayerInput backing field injected
     assert!(cs.contains("PlayerInput _prsmInput"), "missing PlayerInput field:\n{cs}");
     // GetComponent<PlayerInput> in Awake
-    assert!(cs.contains("GetComponent<PlayerInput>"), "missing GetComponent:\n{cs}");
+    assert!(
+        cs.contains("GetComponent<UnityEngine.InputSystem.PlayerInput>()"),
+        "missing GetComponent:\n{cs}"
+    );
     // WasPressedThisFrame call lowered correctly
     assert!(cs.contains("WasPressedThisFrame"), "missing WasPressedThisFrame:\n{cs}");
 
@@ -3634,6 +3637,85 @@ fn v2_new_input_system_feature_gate_error() {
 }
 
 // ── Item #8: v2 generic call type inference ─────────────────────────────────
+
+#[test]
+fn v2_input_actions_annotation_wires_player_input_asset() {
+    let root = unique_temp_dir("prism_input_actions_annotation_smoke");
+    write_file(
+        &root.join(".prsmproject"),
+        r#"[project]
+name = "InputActionsAnnotationTest"
+
+[language]
+version = "2.0"
+features = ["input-system"]
+
+[compiler]
+output_dir = "Generated/PrSM"
+
+[source]
+include = ["*.prsm"]
+exclude = []
+"#,
+    );
+    write_file(
+        &root.join("Player.prsm"),
+        r#"component Player : MonoBehaviour {
+    @inputActions(defaultMap: "Gameplay")
+    serialize controls: InputActionAsset
+
+    update {
+        if input.action("Jump").pressed {
+            jump()
+        }
+    }
+
+    func jump(): Unit {}
+}
+"#,
+    );
+
+    let output = Command::new(prism())
+        .args(["build", "--json"])
+        .current_dir(&root)
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "build failed:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let json_start = stdout.find('{').expect("expected JSON");
+    let json: serde_json::Value = serde_json::from_str(&stdout[json_start..]).unwrap();
+    assert_eq!(json["errors"], 0, "expected 0 errors; got {}", json["errors"]);
+
+    let cs = fs::read_to_string(root.join("Generated").join("PrSM").join("Player.cs")).unwrap();
+    assert!(
+        cs.contains("using UnityEngine.InputSystem;"),
+        "missing UnityEngine.InputSystem using:\n{cs}"
+    );
+    assert!(
+        cs.contains("[UnityEngine.RequireComponent(typeof(UnityEngine.InputSystem.PlayerInput))]"),
+        "missing RequireComponent attribute:\n{cs}"
+    );
+    assert!(
+        cs.contains("_prsmInput.actions = controls;"),
+        "missing PlayerInput.actions wiring:\n{cs}"
+    );
+    assert!(
+        cs.contains("_prsmInput.defaultActionMap = \"Gameplay\";"),
+        "missing defaultActionMap wiring:\n{cs}"
+    );
+    assert!(
+        !cs.contains("[InputActions"),
+        "compiler-only annotation leaked into generated C#:\n{cs}"
+    );
+
+    let _ = fs::remove_dir_all(root);
+}
 
 #[test]
 fn v2_generic_inference_from_variable_type() {

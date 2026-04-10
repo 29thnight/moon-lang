@@ -34,6 +34,37 @@ error[E070]: input-system sugar requires `features = ["input-system"]` in .prsmp
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ```
 
+## Asset Wiring
+
+To drive the sugar from an external `.inputactions` asset, annotate a serialized
+`InputActionAsset` field:
+
+```prsm
+@inputActions(defaultMap: "Gameplay")
+serialize controls: InputActionAsset
+```
+
+The annotation is compiler-only. It does not lower to a C# attribute. Instead,
+the compiler treats the field as the source for `PlayerInput.actions` and, when
+`defaultMap` is present, also assigns `PlayerInput.defaultActionMap`.
+
+Generated wiring:
+
+```csharp
+[UnityEngine.RequireComponent(typeof(UnityEngine.InputSystem.PlayerInput))]
+private UnityEngine.InputSystem.PlayerInput _prsmInput;
+
+void Awake()
+{
+    _prsmInput = GetComponent<UnityEngine.InputSystem.PlayerInput>();
+    _prsmInput.actions = controls;
+    _prsmInput.defaultActionMap = "Gameplay";
+}
+```
+
+This keeps the asset reference Inspector-friendly while ensuring the generated
+component always has a `PlayerInput` dependency.
+
 ## Basic Form
 
 The basic form queries a named action from the default action map:
@@ -136,15 +167,21 @@ the backing infrastructure so you never need to declare it yourself:
 1. A private field on the class:
 
    ```csharp
-   private PlayerInput _prsmInput;
+   private UnityEngine.InputSystem.PlayerInput _prsmInput;
    ```
 
-2. Initialization inside `Awake` (or a merged `Awake` if one already exists):
+2. A class-level dependency marker:
+
+   ```csharp
+   [UnityEngine.RequireComponent(typeof(UnityEngine.InputSystem.PlayerInput))]
+   ```
+
+3. Initialization inside `Awake` (or a merged `Awake` if one already exists):
 
    ```csharp
    void Awake()
    {
-       _prsmInput = GetComponent<PlayerInput>();
+       _prsmInput = GetComponent<UnityEngine.InputSystem.PlayerInput>();
    }
    ```
 

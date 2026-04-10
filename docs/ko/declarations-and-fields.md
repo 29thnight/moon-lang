@@ -87,6 +87,11 @@ serialize weaponSlot: GameObject = null
 
 지원 데코레이터: `@header(label)`, `@tooltip(text)`, `@range(min, max)`, `@space`, `@hideInInspector`.
 
+Input System asset wiring 용도로는, 직렬화된 `InputActionAsset` 필드에
+compiler 전용 annotation `@inputActions(defaultMap: "Gameplay")`를 붙일 수
+있습니다. 이 annotation은 C# attribute를 내보내는 대신 생성된
+`PlayerInput` wiring 을 구성합니다.
+
 ## `val`과 `var`
 
 - `val` — 초기화 후 재할당 불가

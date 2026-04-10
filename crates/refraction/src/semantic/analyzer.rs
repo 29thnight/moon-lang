@@ -47,12 +47,7 @@ pub struct Analyzer {
     /// Enum name → (entry name → payload arity) for pattern binding validation
     enum_payloads: std::collections::HashMap<String, std::collections::HashMap<String, usize>>,
     /// Data class name → field names for destructure validation
-    /// Issue #68: each data class records `(field_name, field_type)`
-    /// pairs so destructure patterns can bind names with the right
-    /// type. Earlier versions only stored names, leaving every
-    /// destructured local with `External("var")` and silently breaking
-    /// downstream type checks.
-    dataclass_fields: std::collections::HashMap<String, Vec<(String, PrismType)>>,
+    dataclass_fields: std::collections::HashMap<String, Vec<String>>,
     known_project_types: std::collections::HashMap<String, PrismType>,
     current_file_path: Option<PathBuf>,
     hir_definitions: Vec<HirDefinition>,
@@ -73,11 +68,6 @@ pub struct Analyzer {
     /// explicit return type or a func returning `Seq<T>`/`IEnumerator<T>`/
     /// `IEnumerable<T>`. Used by E148 to validate `yield expr`.
     coroutine_element_type: Option<PrismType>,
-    /// Issue #65: declared return type of the surrounding function body
-    /// (if any). Set when entering a `Member::Func` whose return type is
-    /// not iterator-shaped, threaded down to `Stmt::Return` so the
-    /// returned value can be type-checked against the declaration.
-    current_func_return_ty: Option<PrismType>,
 }
 
 impl Analyzer {
@@ -105,7 +95,6 @@ impl Analyzer {
             input_system_enabled: false,
             coroutine_yielded_values: false,
             coroutine_element_type: None,
-            current_func_return_ty: None,
         }
     }
 
@@ -465,7 +454,7 @@ impl Analyzer {
                 self.current_decl_name = None;
                 self.decl_ctx = DeclContext::None;
             }
-            Decl::DataClass { name, fields, members, span, .. } => {
+            Decl::DataClass { name, fields, span, .. } => {
                 self.decl_ctx = DeclContext::DataClass;
                 self.current_decl_name = Some(name.clone());
                 // Validate fields
@@ -482,37 +471,9 @@ impl Analyzer {
                         field.name_span,
                     );
                 }
-                // Store (field name, field type) pairs for destructure
-                // pattern validation and binding.
-                let field_specs: Vec<(String, PrismType)> = fields
-                    .iter()
-                    .map(|f| (f.name.clone(), self.resolve_typeref(&f.ty)))
-                    .collect();
-                self.dataclass_fields.insert(name.clone(), field_specs);
-                // Issue #66: data class bodies (`data class Stats(hp: Int) { ... }`)
-                // can carry methods, computed properties, operator overloads, etc.
-                // Commit 493bb10 added the AST/lowering side but the analyzer
-                // never recursed into them, leaving every member-level diagnostic
-                // dead. Mirror the `Decl::Struct` arm — push a scope, run the
-                // member analyzer, pop the scope. The fields are already in the
-                // outer scope via `record_member_definition` above.
-                if !members.is_empty() {
-                    self.scopes.push_scope();
-                    // Re-define the primary-ctor fields in the inner scope so
-                    // method bodies can refer to them via bare names.
-                    for field in fields {
-                        let ty = self.resolve_typeref(&field.ty);
-                        self.scopes.define(Symbol {
-                            name: field.name.clone(),
-                            ty,
-                            kind: SymbolKind::Field,
-                            mutable: false,
-                            definition_id: None,
-                        });
-                    }
-                    self.analyze_members(members);
-                    self.scopes.pop_scope();
-                }
+                // Store field names for destructure pattern validation.
+                let field_names: Vec<String> = fields.iter().map(|f| f.name.clone()).collect();
+                self.dataclass_fields.insert(name.clone(), field_names);
                 self.current_decl_name = None;
                 self.decl_ctx = DeclContext::None;
             }
@@ -580,37 +541,8 @@ impl Analyzer {
                 // Type aliases are resolved during registration; nothing to analyze.
             }
             Decl::Extension { members, .. } => {
-                // Extension blocks: analyze members in a fresh scope.
+                // Extension blocks: analyze members in a fresh scope
                 self.scopes.push_scope();
-                // Issue #67: pre-loop diagnostics — coroutine / require /
-                // optional / child / parent are component-only members and
-                // would lower to invalid C# inside an extend block.
-                // Mirror the `Decl::Asset` and `Decl::Class` pre-loops.
-                for m in members {
-                    match m {
-                        Member::Lifecycle { kind, span, .. } => {
-                            self.diag.error("E012",
-                                format!("Lifecycle block '{:?}' is not valid inside an extend declaration", kind),
-                                *span);
-                        }
-                        Member::Require { span, .. } => {
-                            self.diag.error("E013", "'require' fields are only valid inside component declarations", *span);
-                        }
-                        Member::Optional { span, .. } => {
-                            self.diag.error("E013", "'optional' fields are only valid inside component declarations", *span);
-                        }
-                        Member::Child { span, .. } => {
-                            self.diag.error("E013", "'child' fields are only valid inside component declarations", *span);
-                        }
-                        Member::Parent { span, .. } => {
-                            self.diag.error("E013", "'parent' fields are only valid inside component declarations", *span);
-                        }
-                        Member::Coroutine { span, .. } => {
-                            self.diag.error("E060", "Coroutines are only valid inside component declarations", *span);
-                        }
-                        _ => {}
-                    }
-                }
                 self.analyze_members(members);
                 self.scopes.pop_scope();
             }
@@ -777,7 +709,6 @@ impl Analyzer {
             Member::Func {
                 name,
                 name_span,
-                params,
                 return_ty,
                 is_operator,
                 ..
@@ -796,28 +727,6 @@ impl Analyzer {
                         format!("'{}' is a reserved built-in method name (maps to Unity API). Choose a different name.", name),
                         *name_span,
                     );
-                }
-                // Issue #88: operator overloads cannot carry parameter
-                // modifiers (`ref` / `out` / `vararg`). The lowering
-                // hardcodes `CsParamMod::None`, silently dropping the
-                // modifier. Reject at the analyzer layer with a
-                // clear diagnostic instead of silently miscompiling.
-                // `operator get` / `operator set` (indexers) are
-                // excluded: the indexer lowering path reads indices
-                // positionally and is not subject to this restriction.
-                if *is_operator && name != "get" && name != "set" {
-                    for p in params {
-                        if p.modifier != ParamMod::None || p.is_vararg {
-                            self.diag.error(
-                                "E211",
-                                format!(
-                                    "Operator overload parameters cannot carry 'ref', 'out', or 'vararg' modifiers. Found on parameter '{}' of operator '{}'.",
-                                    p.name, name
-                                ),
-                                p.span,
-                            );
-                        }
-                    }
                 }
                 let ret = return_ty.as_ref().map(|t| self.resolve_typeref(t)).unwrap_or(PrismType::Unit);
                 let definition_id = self.record_member_definition(
@@ -1004,10 +913,6 @@ impl Analyzer {
             Member::NestedDecl { decl, .. } => {
                 self.register_decl(decl);
             }
-            // Issue #60: member-level `listen` declaration — no symbol
-            // binding needed here; the event and body are analyzed in
-            // `analyze_member_body` below.
-            Member::ListenDecl { .. } => {}
         }
     }
 
@@ -1031,15 +936,6 @@ impl Analyzer {
                 };
                 let prev_yielded = std::mem::replace(&mut self.coroutine_yielded_values, false);
                 let prev_elem = std::mem::replace(&mut self.coroutine_element_type, iter_elem.clone());
-                // Issue #65: thread the declared return type into the
-                // function body so `Stmt::Return` can type-check `value`
-                // against it. Iterator-bodied funcs use the element-type
-                // path instead, so we leave `current_func_return_ty` as
-                // None for them.
-                let prev_func_ret = std::mem::take(&mut self.current_func_return_ty);
-                if !is_iter_func {
-                    self.current_func_return_ty = return_ty.as_ref().map(|t| self.resolve_typeref(t));
-                }
                 self.current_member_name = Some(name.clone());
                 let prev_in_async = self.in_async_fn;
                 let prev_used_await = self.async_used_await;
@@ -1087,7 +983,6 @@ impl Analyzer {
                 }
                 self.coroutine_yielded_values = prev_yielded;
                 self.coroutine_element_type = prev_elem;
-                self.current_func_return_ty = prev_func_ret;
                 self.in_async_fn = prev_in_async;
                 self.async_used_await = prev_used_await;
                 self.current_member_name = None;
@@ -1228,138 +1123,15 @@ impl Analyzer {
                 self.scopes.pop_scope();
                 self.body_ctx = BodyContext::None;
             }
-            Member::BindProperty { name, ty, init, span, .. } => {
-                // Issue #63: type-check the bind initializer against the
-                // declared type. `bind hp: Int = "oops"` previously slipped
-                // through silently.
+            Member::BindProperty { init, .. } => {
                 if let Some(expr) = init {
-                    let dt = self.resolve_typeref(ty);
-                    let init_ty = self.analyze_expr_with_expected(expr, Some(&dt));
-                    if field_init_type_mismatch(&init_ty, &dt) {
-                        self.diag.error(
-                            "E020",
-                            format!(
-                                "Type mismatch in bind property '{}'. Expected '{}', found '{}'",
-                                name,
-                                dt.display_name(),
-                                init_ty.display_name()
-                            ),
-                            *span,
-                        );
-                    }
-                }
-            }
-            // Issue #63: type-check field initializers. The previous
-            // `_ => {}` catch-all silently accepted `var hp: Int = "oops"`
-            // and let downstream C# compilation choke on it. Validate
-            // every field flavor with a declared type and an initializer.
-            Member::Field { name, ty, init, span, .. } => {
-                if let (Some(t), Some(expr)) = (ty.as_ref(), init.as_ref()) {
-                    let dt = self.resolve_typeref(t);
-                    let init_ty = self.analyze_expr_with_expected(expr, Some(&dt));
-                    if field_init_type_mismatch(&init_ty, &dt) {
-                        self.diag.error(
-                            "E020",
-                            format!(
-                                "Type mismatch in field '{}'. Expected '{}', found '{}'",
-                                name,
-                                dt.display_name(),
-                                init_ty.display_name()
-                            ),
-                            *span,
-                        );
-                    }
-                } else if let Some(expr) = init.as_ref() {
-                    // No declared type — just analyze for side-effect
-                    // checks (collection literal validation, etc.).
-                    self.check_collection_literal_unannotated(expr);
                     let _ = self.analyze_expr(expr);
-                }
-            }
-            Member::SerializeField { name, ty, init, span, .. } => {
-                if let Some(expr) = init {
-                    let dt = self.resolve_typeref(ty);
-                    let init_ty = self.analyze_expr_with_expected(expr, Some(&dt));
-                    if field_init_type_mismatch(&init_ty, &dt) {
-                        self.diag.error(
-                            "E020",
-                            format!(
-                                "Type mismatch in serialized field '{}'. Expected '{}', found '{}'",
-                                name,
-                                dt.display_name(),
-                                init_ty.display_name()
-                            ),
-                            *span,
-                        );
-                    }
-                }
-            }
-            // Property accessors: walk the get/set bodies. The
-            // computed-property body has access to the surrounding scope,
-            // and a custom setter receives `value` as a parameter.
-            Member::Property { name, ty, getter, setter, span, .. } => {
-                let dt = self.resolve_typeref(ty);
-                if let Some(getter_body) = getter {
-                    self.body_ctx = BodyContext::Function;
-                    self.scopes.push_scope();
-                    match getter_body {
-                        FuncBody::Block(block) => self.analyze_block(block),
-                        FuncBody::ExprBody(expr) => {
-                            let body_ty = self.analyze_expr_with_expected(expr, Some(&dt));
-                            if field_init_type_mismatch(&body_ty, &dt) {
-                                self.diag.error(
-                                    "E020",
-                                    format!(
-                                        "Type mismatch in property '{}' getter. Expected '{}', found '{}'",
-                                        name,
-                                        dt.display_name(),
-                                        body_ty.display_name()
-                                    ),
-                                    *span,
-                                );
-                            }
-                        }
-                    }
-                    self.scopes.pop_scope();
-                    self.body_ctx = BodyContext::None;
-                }
-                if let Some(setter_clause) = setter {
-                    self.body_ctx = BodyContext::Function;
-                    self.scopes.push_scope();
-                    self.scopes.define(Symbol {
-                        name: setter_clause.param_name.clone(),
-                        ty: dt.clone(),
-                        kind: SymbolKind::Parameter,
-                        mutable: false,
-                        definition_id: None,
-                    });
-                    self.analyze_block(&setter_clause.body);
-                    self.scopes.pop_scope();
-                    self.body_ctx = BodyContext::None;
                 }
             }
             // v5: nested declaration — recurse into the inner decl so
             // its body is analyzed under the surrounding scope.
             Member::NestedDecl { decl, .. } => {
                 self.analyze_decl(decl);
-            }
-            // Issue #60: member-level `listen` — analyze the event
-            // expression and body under a new scope with the listener
-            // params bound (mirrors the body-level `Stmt::Listen` path).
-            Member::ListenDecl { event, params, body, .. } => {
-                let _ = self.analyze_expr(event);
-                self.scopes.push_scope();
-                for p in params {
-                    self.scopes.define(Symbol {
-                        name: p.clone(),
-                        ty: PrismType::External("var".into()),
-                        kind: SymbolKind::Local,
-                        mutable: false,
-                        definition_id: None,
-                    });
-                }
-                self.analyze_block(body);
-                self.scopes.pop_scope();
             }
             _ => {}
         }
@@ -1384,12 +1156,10 @@ impl Analyzer {
                 merge_smart_cast_symbols(&mut bindings, right_bindings);
                 bindings
             }
-            Expr::Is { expr: inner, ty, span } => {
+            Expr::Is { expr: inner, ty, .. } => {
                 self.analyze_expr(inner);
                 let narrowed_ty = self.resolve_typeref(ty);
-                self.smart_cast_symbol(inner, narrowed_ty, *span)
-                    .into_iter()
-                    .collect()
+                self.smart_cast_symbol(inner, narrowed_ty).into_iter().collect()
             }
             _ => {
                 self.analyze_expr(expr);
@@ -1515,36 +1285,6 @@ impl Analyzer {
                         }
                     }
                 }
-                // Issue #64: `this.field = ...` is the most common
-                // val-reassignment pattern in OO-style code, but the
-                // bare-Ident check above ignored member-access targets.
-                // Walk through `this.x` (and chains like `this.x.y` —
-                // the leaf hop is what matters for mutability) and
-                // re-run the lookup against the surrounding member
-                // scope. We only target a leading `this` receiver to
-                // avoid emitting on legitimate cross-object writes
-                // (`other.foo = bar` where `other.foo` may be a `var`
-                // we don't track).
-                if let Expr::MemberAccess { receiver, name, name_span, .. } = target {
-                    if matches!(receiver.as_ref(), Expr::This(_)) {
-                        if let Some(sym) = self.scopes.lookup(name) {
-                            if !sym.mutable {
-                                self.diag.error(
-                                    "E040",
-                                    format!("Cannot assign to immutable variable '{}'", name),
-                                    *name_span,
-                                );
-                            }
-                            if sym.kind == SymbolKind::RequiredComponent {
-                                self.diag.error(
-                                    "E041",
-                                    format!("Cannot assign to 'require' field '{}'. It is automatically initialized", name),
-                                    *name_span,
-                                );
-                            }
-                        }
-                    }
-                }
             }
             Stmt::If { cond, then_block, else_branch, .. } => {
                 let smart_casts = self.analyze_condition_with_smart_casts(cond);
@@ -1625,7 +1365,7 @@ impl Analyzer {
                 // The previous fall-through to `var` produced a false
                 // positive E148 inside `for i in 0 until 5 { yield i }`.
                 let elem_ty = match iterable {
-                    Expr::Range { start: Some(start), .. } => {
+                    Expr::Range { start, .. } => {
                         let t = self.analyze_expr(start);
                         if t.is_error() {
                             PrismType::External("var".into())
@@ -1643,62 +1383,9 @@ impl Analyzer {
                     *name_span,
                 );
                 self.scopes.define(Symbol {
-                    name: var_name.clone(), ty: elem_ty.clone(), kind: SymbolKind::Local, mutable: false,
+                    name: var_name.clone(), ty: elem_ty, kind: SymbolKind::Local, mutable: false,
                     definition_id,
                 });
-                // Issue #62: for a tuple destructure `for (k, v) in pairs`,
-                // the parser stores the remaining binding names in
-                // `for_pattern.bindings` (with `type_name == ""`). Define
-                // each additional binding in the loop scope so the body
-                // can refer to them. `var_name` is the first binding and
-                // is already defined above.
-                //
-                // Issue #68: extend the same logic to data class
-                // destructure (`for EnemyEntry(id, name) in spawns`).
-                // The first binding is named after the data class so
-                // the synthetic var_name above is misleading; rebind
-                // with the proper field type when possible.
-                if let Some(pattern) = for_pattern {
-                    if pattern.type_name.is_empty() && pattern.bindings.len() >= 2 {
-                        for extra in pattern.bindings.iter().skip(1) {
-                            if extra == "_" { continue; }
-                            let extra_def = self.record_nested_definition(
-                                extra,
-                                HirDefinitionKind::Local,
-                                PrismType::External("var".into()),
-                                false,
-                                pattern.span,
-                            );
-                            self.scopes.define(Symbol {
-                                name: extra.clone(),
-                                ty: PrismType::External("var".into()),
-                                kind: SymbolKind::Local,
-                                mutable: false,
-                                definition_id: extra_def,
-                            });
-                        }
-                    } else if !pattern.type_name.is_empty() {
-                        if let Some(fields) = self.dataclass_fields.get(&pattern.type_name).cloned() {
-                            for (binding, (_field_name, field_ty)) in pattern.bindings.iter().zip(fields.iter()) {
-                                if binding == "_" { continue; }
-                                let extra_def = self.record_nested_definition(
-                                    binding,
-                                    HirDefinitionKind::Local,
-                                    field_ty.clone(),
-                                    false,
-                                    pattern.span,
-                                );
-                                self.scopes.define(Symbol {
-                                    name: binding.clone(),
-                                    ty: field_ty.clone(),
-                                    kind: SymbolKind::Local,
-                                    mutable: false,
-                                    definition_id: extra_def,
-                                });
-                            }
-                        }
-                    }
-                }
                 self.loop_depth += 1;
                 self.analyze_block(body);
                 self.loop_depth -= 1;
@@ -1712,83 +1399,7 @@ impl Analyzer {
                     false,
                     pattern.span,
                 );
-                let _init_ty = self.analyze_expr(init);
-                // Issue #68: bind each destructured name into the
-                // surrounding scope so downstream code (`val zz = hp`)
-                // can resolve them with the correct type. The previous
-                // implementation only recorded the HIR pattern binding
-                // and never `scopes.define`d the names, so references
-                // fell through the unknown-ident path.
-                let field_specs: Option<Vec<(String, PrismType)>> = self
-                    .dataclass_fields
-                    .get(&pattern.type_name)
-                    .cloned();
-                if pattern.type_name.is_empty() {
-                    // Tuple destructure `val (a, b) = pair` — without
-                    // tuple-element type inference we approximate each
-                    // binding as `var`. The lowering still emits the
-                    // C# tuple deconstruction directly.
-                    for binding in &pattern.bindings {
-                        if binding == "_" { continue; }
-                        let def_id = self.record_nested_definition(
-                            binding,
-                            HirDefinitionKind::Local,
-                            PrismType::External("var".into()),
-                            false,
-                            pattern.span,
-                        );
-                        self.scopes.define(Symbol {
-                            name: binding.clone(),
-                            ty: PrismType::External("var".into()),
-                            kind: SymbolKind::Local,
-                            mutable: false,
-                            definition_id: def_id,
-                        });
-                    }
-                } else if let Some(fields) = field_specs {
-                    // Data class destructure: zip bindings with field
-                    // types. If the arities mismatch we still bind what
-                    // we can; the arity error is surfaced separately
-                    // by `record_pattern_binding`.
-                    for (binding, (_field_name, field_ty)) in pattern.bindings.iter().zip(fields.iter()) {
-                        if binding == "_" { continue; }
-                        let def_id = self.record_nested_definition(
-                            binding,
-                            HirDefinitionKind::Local,
-                            field_ty.clone(),
-                            false,
-                            pattern.span,
-                        );
-                        self.scopes.define(Symbol {
-                            name: binding.clone(),
-                            ty: field_ty.clone(),
-                            kind: SymbolKind::Local,
-                            mutable: false,
-                            definition_id: def_id,
-                        });
-                    }
-                } else {
-                    // Unknown type — bind each name as `var` so at
-                    // least references resolve, even if their type is
-                    // approximated.
-                    for binding in &pattern.bindings {
-                        if binding == "_" { continue; }
-                        let def_id = self.record_nested_definition(
-                            binding,
-                            HirDefinitionKind::Local,
-                            PrismType::External("var".into()),
-                            false,
-                            pattern.span,
-                        );
-                        self.scopes.define(Symbol {
-                            name: binding.clone(),
-                            ty: PrismType::External("var".into()),
-                            kind: SymbolKind::Local,
-                            mutable: false,
-                            definition_id: def_id,
-                        });
-                    }
-                }
+                self.analyze_expr(init);
             }
             Stmt::While { cond, body, .. } => {
                 self.analyze_expr(cond);
@@ -1798,43 +1409,9 @@ impl Analyzer {
                 self.scopes.pop_scope();
                 self.loop_depth -= 1;
             }
-            Stmt::Return { value, span, .. } => {
-                // Issue #65: type-check the returned value against the
-                // surrounding function's declared return type. Without
-                // this check, `func f(): Int { return "oops" }` slipped
-                // through silently. Bare `return;` inside a function
-                // declared with a non-Unit return type is also a
-                // type error.
+            Stmt::Return { value, .. } => {
                 if let Some(v) = value {
-                    let val_ty = self.analyze_expr(v);
-                    if let Some(expected) = self.current_func_return_ty.clone() {
-                        if field_init_type_mismatch(&val_ty, &expected) {
-                            self.diag.error(
-                                "E020",
-                                format!(
-                                    "Return type mismatch. Expected '{}', found '{}'",
-                                    expected.display_name(),
-                                    val_ty.display_name()
-                                ),
-                                *span,
-                            );
-                        }
-                    }
-                } else {
-                    // Bare `return` — only valid when the function
-                    // returns Unit / no declared return type.
-                    if let Some(expected) = self.current_func_return_ty.clone() {
-                        if !is_unit_type(&expected) {
-                            self.diag.error(
-                                "E020",
-                                format!(
-                                    "Return value missing. Function declared return type '{}'",
-                                    expected.display_name()
-                                ),
-                                *span,
-                            );
-                        }
-                    }
+                    self.analyze_expr(v);
                 }
             }
             Stmt::Wait { form, span } => {
@@ -2345,12 +1922,8 @@ impl Analyzer {
                 PrismType::External("var".into())
             }
             Expr::Range { start, end, step, .. } => {
-                if let Some(s) = start {
-                    self.analyze_expr(s);
-                }
-                if let Some(e) = end {
-                    self.analyze_expr(e);
-                }
+                self.analyze_expr(start);
+                self.analyze_expr(end);
                 if let Some(s) = step {
                     self.analyze_expr(s);
                 }
@@ -2500,31 +2073,6 @@ impl Analyzer {
             Expr::ThrowExpr { exception, .. } => {
                 self.analyze_expr(exception);
                 PrismType::Error
-            }
-            // Issue #49: `try { expr } catch (e: T) { expr }` as
-            // expression. Analyze the try body and each catch body
-            // under a fresh scope that binds `e: T`. The aggregate
-            // type is approximated as `var` since we don't yet have
-            // a cross-arm lub inference path; this matches how the
-            // statement form is handled for side-effect analysis.
-            Expr::TryExpr { try_block, catches, .. } => {
-                self.scopes.push_scope();
-                self.analyze_block(try_block);
-                self.scopes.pop_scope();
-                for c in catches {
-                    let ty = self.resolve_typeref(&c.ty);
-                    self.scopes.push_scope();
-                    self.scopes.define(Symbol {
-                        name: c.name.clone(),
-                        ty,
-                        kind: SymbolKind::Local,
-                        mutable: false,
-                        definition_id: None,
-                    });
-                    self.analyze_block(&c.body);
-                    self.scopes.pop_scope();
-                }
-                PrismType::External("var".into())
             }
         }
     }
@@ -2694,36 +2242,11 @@ impl Analyzer {
             .map(|symbol| (symbol.ty.clone(), symbol.definition_id))
     }
 
-    fn smart_cast_symbol(&mut self, expr: &Expr, ty: PrismType, cast_span: Span) -> Option<Symbol> {
+    fn smart_cast_symbol(&self, expr: &Expr, ty: PrismType) -> Option<Symbol> {
         let Expr::Ident(name, _) = expr else {
             return None;
         };
         let symbol = self.scopes.lookup(name)?.clone();
-        // Issue #69: reject smart casts where the original symbol type
-        // and the cast target are clearly unrelated. The previous code
-        // unconditionally overwrote the symbol type, so `if x is BoxCollider`
-        // against a `Float x` was silently accepted and the body of the
-        // if-block treated `x` as a `BoxCollider`. We surface a warning
-        // (W036) instead of an error so existing code with imprecise
-        // type info still compiles, but the LSP gets a hint to surface.
-        let original_ty = symbol.ty.non_null().clone();
-        let target_ty = ty.non_null().clone();
-        if smart_cast_types_unrelated(&original_ty, &target_ty) {
-            self.diag.warning(
-                "W036",
-                format!(
-                    "'{}' has type '{}' which is not related to '{}'; this `is` test is statically false",
-                    name,
-                    symbol.ty.display_name(),
-                    ty.display_name()
-                ),
-                cast_span,
-            );
-            // Returning None means the smart cast does NOT take effect:
-            // the original symbol stays in scope, so member access on the
-            // bogus narrowed type is not silently allowed.
-            return None;
-        }
         Some(Symbol {
             name: symbol.name,
             ty,
@@ -2972,8 +2495,7 @@ impl Analyzer {
                         );
                     }
                 }
-                // Unknown type_name → skip (could be external type or
-                // a tuple destructure with empty type_name).
+                // Unknown type_name → skip (could be external type).
             }
         }
         arity
@@ -3174,112 +2696,6 @@ fn is_non_generic_iterator(ty: &PrismType) -> bool {
 
 /// The curated set of preprocessor symbols documented in the v5 spec.
 /// Symbols outside this list still pass through to the C# preprocessor —
-/// Issue #65: detect whether a `PrismType` is the Unit ("void") type.
-/// Used by the `Stmt::Return` validator to allow bare `return;` only in
-/// functions that have no value-returning declared type.
-fn is_unit_type(ty: &PrismType) -> bool {
-    matches!(ty, PrismType::Unit)
-        || matches!(ty, PrismType::External(name) if name == "Unit" || name == "void")
-}
-
-/// Issue #63: conservative field-initializer / return type check.
-/// Returns true only when we are confident that `init_ty` is NOT
-/// assignable to `declared_ty`. We deliberately fail open on `External`
-/// (cross-file) types because the analyzer cannot resolve them — those
-/// are validated by the downstream C# compiler. Without this guard the
-/// type check would emit false positives for any reference to a type
-/// declared in another file.
-fn field_init_type_mismatch(init_ty: &PrismType, declared_ty: &PrismType) -> bool {
-    if init_ty.is_error() || declared_ty.is_error() {
-        return false;
-    }
-    if init_ty.is_assignable_to(declared_ty) {
-        return false;
-    }
-    // Either side being External / unknown means we lack the type
-    // information needed to be confident. Skip the diagnostic.
-    let is_unknown = |t: &PrismType| -> bool {
-        matches!(t, PrismType::External(_))
-            || matches!(t, PrismType::Generic(name, _) if name == "var" || name == "lambda")
-    };
-    if is_unknown(init_ty) || is_unknown(declared_ty) {
-        return false;
-    }
-    // Look through Nullable wrappers — `T?` is treated like `T` for
-    // the purposes of "is the inner type recognizable?".
-    let init_inner = init_ty.non_null();
-    let decl_inner = declared_ty.non_null();
-    if is_unknown(init_inner) || is_unknown(decl_inner) {
-        return false;
-    }
-    true
-}
-
-/// Issue #69: detect smart-cast type pairs that are obviously unrelated
-/// — e.g. `Float is BoxCollider`, `String is Int`. Returns true only
-/// for cases the analyzer can prove are nonsensical with its limited
-/// type knowledge. We err on the side of false negatives so user code
-/// with imprecise type info (External, Error, Object) still compiles.
-fn smart_cast_types_unrelated(original: &PrismType, target: &PrismType) -> bool {
-    use crate::semantic::types::PrimitiveKind;
-    // If either side is unknown / error / Object, we can't say anything.
-    let unknowable = |t: &PrismType| -> bool {
-        matches!(
-            t,
-            PrismType::Error
-                | PrismType::External(_)
-                | PrismType::Generic(_, _)
-        ) || matches!(t, PrismType::Class(name) if name == "Object")
-            || matches!(t, PrismType::Component(name) if name == "Object")
-    };
-    if unknowable(original) || unknowable(target) {
-        return false;
-    }
-    // Same kind, same name → identical or assignable, never unrelated.
-    if original == target {
-        return false;
-    }
-    // Primitives are unrelated to non-primitives, except for the
-    // numeric widening pairs handled by `is_assignable_to`.
-    match (original, target) {
-        (PrismType::Primitive(a), PrismType::Primitive(b)) => {
-            // Different primitive kinds are unrelated unless they admit
-            // a numeric conversion (Int↔Float↔Double, Int↔Long).
-            !primitive_pair_compatible(*a, *b)
-        }
-        (PrismType::Primitive(_), PrismType::Class(_))
-        | (PrismType::Primitive(_), PrismType::Component(_))
-        | (PrismType::Primitive(_), PrismType::Asset(_))
-        | (PrismType::Primitive(_), PrismType::Enum(_))
-        | (PrismType::Class(_), PrismType::Primitive(_))
-        | (PrismType::Component(_), PrismType::Primitive(_))
-        | (PrismType::Asset(_), PrismType::Primitive(_))
-        | (PrismType::Enum(_), PrismType::Primitive(_)) => true,
-        // Different named class/component/asset/enum types — without an
-        // inheritance graph we cannot tell. Default to NOT flagging so
-        // legitimate downcasts still compile.
-        _ => false,
-    }
-}
-
-/// Helper for `smart_cast_types_unrelated`: returns true when two
-/// primitive kinds are interconvertible via PrSM/C# numeric promotion.
-fn primitive_pair_compatible(a: crate::semantic::types::PrimitiveKind, b: crate::semantic::types::PrimitiveKind) -> bool {
-    use crate::semantic::types::PrimitiveKind::*;
-    if a == b {
-        return true;
-    }
-    matches!(
-        (a, b),
-        (Int, Float) | (Float, Int)
-            | (Int, Double) | (Double, Int)
-            | (Int, Long) | (Long, Int)
-            | (Float, Double) | (Double, Float)
-            | (Long, Float) | (Float, Long)
-            | (Long, Double) | (Double, Long)
-    )
-}
-
 /// the analyzer surfaces W034 only as a hint to the user.
 /// Issue #12: well-known type names that should never be the target of
 /// a `require` / `optional` / `child` / `parent` qualifier. Used by
@@ -3970,239 +3386,5 @@ component PlayerHealth : MonoBehaviour {
             "expected W034 for unknown preprocessor symbol: {:?}",
             diags
         );
-    }
-
-    // Issue #63: field initializer must be type-checked.
-    #[test]
-    fn test_field_init_type_mismatch_emits_e020() {
-        let diags = errors("component Foo : MonoBehaviour {\n  var hp: Int = \"oops\"\n}");
-        assert!(
-            diags.iter().any(|d| d.code == "E020"),
-            "expected E020 for wrong-typed field init: {:?}",
-            diags
-        );
-    }
-
-    #[test]
-    fn test_field_init_type_match_no_diagnostic() {
-        let diags = errors("component Foo : MonoBehaviour {\n  var hp: Int = 100\n}");
-        assert!(diags.is_empty(), "expected no diagnostics: {:?}", diags);
-    }
-
-    // Issue #63 (cont): SerializeField initializer also gets the check.
-    #[test]
-    fn test_serialize_field_init_type_mismatch_emits_e020() {
-        let diags = errors("component Foo : MonoBehaviour {\n  serialize speed: Float = \"fast\"\n}");
-        assert!(
-            diags.iter().any(|d| d.code == "E020"),
-            "expected E020 for wrong-typed serialized field init: {:?}",
-            diags
-        );
-    }
-
-    // Issue #64: `this.field = ...` on a `val` field must surface E040.
-    #[test]
-    fn test_this_field_assignment_to_val_emits_e040() {
-        let diags = errors(
-            "component Foo : MonoBehaviour {\n  val hp: Int = 100\n  func bump() {\n    this.hp = 50\n  }\n}",
-        );
-        assert!(
-            diags.iter().any(|d| d.code == "E040"),
-            "expected E040 for this.val assignment: {:?}",
-            diags
-        );
-    }
-
-    #[test]
-    fn test_this_field_assignment_to_var_no_e040() {
-        let diags = errors(
-            "component Foo : MonoBehaviour {\n  var hp: Int = 100\n  func bump() {\n    this.hp = 50\n  }\n}",
-        );
-        assert!(
-            !diags.iter().any(|d| d.code == "E040"),
-            "expected no E040 for this.var assignment: {:?}",
-            diags
-        );
-    }
-
-    // Issue #65: block-bodied func with declared return type must validate
-    // `return value` against the declaration.
-    #[test]
-    fn test_return_value_wrong_type_emits_e020() {
-        let diags = errors(
-            "component Foo : MonoBehaviour {\n  func f(): Int {\n    return \"oops\"\n  }\n}",
-        );
-        assert!(
-            diags.iter().any(|d| d.code == "E020"),
-            "expected E020 for wrong-typed return: {:?}",
-            diags
-        );
-    }
-
-    #[test]
-    fn test_return_value_correct_type_no_diagnostic() {
-        let diags = errors(
-            "component Foo : MonoBehaviour {\n  func f(): Int {\n    return 42\n  }\n}",
-        );
-        assert!(diags.is_empty(), "expected no diagnostics: {:?}", diags);
-    }
-
-    // Issue #65 (cont): bare `return` in a value-returning function is also a
-    // type error.
-    #[test]
-    fn test_bare_return_in_typed_func_emits_e020() {
-        let diags = errors(
-            "component Foo : MonoBehaviour {\n  func f(): Int {\n    return\n  }\n}",
-        );
-        assert!(
-            diags.iter().any(|d| d.code == "E020"),
-            "expected E020 for bare return in typed func: {:?}",
-            diags
-        );
-    }
-
-    // Issue #66: data class body members must be analyzed.
-    #[test]
-    fn test_data_class_body_member_break_outside_loop_emits_e031() {
-        let diags = errors(
-            "data class Stats(hp: Int) {\n  func boom() {\n    break\n  }\n}",
-        );
-        assert!(
-            diags.iter().any(|d| d.code == "E031"),
-            "expected E031 inside data class method: {:?}",
-            diags
-        );
-    }
-
-    // Issue #67: extend block must reject component-only members.
-    #[test]
-    fn test_extend_block_coroutine_emits_e060() {
-        let diags = errors(
-            "extend String {\n  coroutine bar() {\n    wait 1.0s\n  }\n}",
-        );
-        assert!(
-            diags.iter().any(|d| d.code == "E060"),
-            "expected E060 in extend block: {:?}",
-            diags
-        );
-    }
-
-    #[test]
-    fn test_extend_block_require_emits_e013() {
-        let diags = errors(
-            "extend String {\n  require rb: Rigidbody\n}",
-        );
-        assert!(
-            diags.iter().any(|d| d.code == "E013"),
-            "expected E013 in extend block: {:?}",
-            diags
-        );
-    }
-
-    // Issue #68: data class destructure must bind names with the field type.
-    #[test]
-    fn test_destructure_binds_names_with_field_types() {
-        let diags = analyze_multi(&[
-            "data class Stats(hp: Int, speed: Float)",
-            "component Foo : MonoBehaviour {\n  func f() {\n    val Stats(hp, speed) = getStats()\n    val mismatch: String = hp\n  }\n}",
-        ]);
-        assert!(
-            diags.iter().any(|d| d.code == "E020"),
-            "expected E020 because hp:Int cannot bind to String: {:?}",
-            diags
-        );
-    }
-
-    // Issue #69: smart cast against an unrelated type must surface W036
-    // and NOT narrow the symbol.
-    #[test]
-    fn test_smart_cast_unrelated_emits_w036() {
-        let diags = analyze_multi(&[
-            "class BoxCollider {\n  val size: Float = 1.0\n}",
-            "component Probe : MonoBehaviour {\n  func handle() {\n    val x: Float = 0.0\n    if x is BoxCollider {\n      log(x)\n    }\n  }\n}",
-        ]);
-        assert!(
-            diags.iter().any(|d| d.code == "W036"),
-            "expected W036 for unrelated smart cast: {:?}",
-            diags
-        );
-    }
-
-    // Issue #69 (cont): smart cast on a related (subtype-ish) target
-    // must NOT emit W036.
-    #[test]
-    fn test_smart_cast_related_no_w036() {
-        let diags = analyze_multi(&[
-            "class Collider {}",
-            "class BoxCollider : Collider {\n  val size: Float = 1.0\n}",
-            "component Probe : MonoBehaviour {\n  func handle(c: Collider) {\n    if c is BoxCollider {\n      log(c.size)\n    }\n  }\n}",
-        ]);
-        assert!(
-            !diags.iter().any(|d| d.code == "W036"),
-            "expected no W036 for related smart cast: {:?}",
-            diags
-        );
-    }
-
-    // Issue #82: v3.3.0 regression — `var x: Int? = null` previously
-    // emitted E020 because the field-initializer type check did not
-    // recognize `Nullable(Error)` (the analyzed type of a `null`
-    // literal) as assignable to a nullable target.
-    #[test]
-    fn test_null_literal_assignable_to_nullable_field() {
-        let diags = errors("component Foo : MonoBehaviour {\n  var x: Int? = null\n  val name: String? = null\n}");
-        assert!(
-            diags.is_empty(),
-            "expected no diagnostics for null assignment to nullable fields: {:?}",
-            diags
-        );
-    }
-
-    // Issue #82 (cont): a wrong-typed initializer to a nullable
-    // field should still be caught.
-    #[test]
-    fn test_wrong_typed_nullable_field_init_still_catches() {
-        let diags = errors("component Foo : MonoBehaviour {\n  var x: Int? = \"oops\"\n}");
-        assert!(
-            diags.iter().any(|d| d.code == "E020"),
-            "expected E020 for wrong-typed nullable field init: {:?}",
-            diags
-        );
-    }
-
-    // Issue #88: operator overloads with ref/out/vararg modifiers
-    // should be rejected with E211.
-    #[test]
-    fn test_operator_with_ref_param_emits_e211() {
-        let diags = errors(
-            "data class Entry(id: Int) {\n  operator equals(ref other: Entry): Bool = other.id == id\n}",
-        );
-        assert!(
-            diags.iter().any(|d| d.code == "E211"),
-            "expected E211 for operator with ref param: {:?}",
-            diags
-        );
-    }
-
-    #[test]
-    fn test_operator_with_vararg_param_emits_e211() {
-        let diags = errors(
-            "data class Bag(total: Int) {\n  operator plus(vararg more: Int): Bag = this\n}",
-        );
-        assert!(
-            diags.iter().any(|d| d.code == "E211"),
-            "expected E211 for operator with vararg param: {:?}",
-            diags
-        );
-    }
-
-    // Issue #88 (cont): regular operator declarations without modifiers
-    // must still work.
-    #[test]
-    fn test_operator_no_modifier_ok() {
-        let diags = errors(
-            "data class Point(x: Int, y: Int) {\n  operator equals(other: Point): Bool = other.x == x\n}",
-        );
-        assert!(diags.is_empty(), "expected no diagnostics: {:?}", diags);
     }
 }

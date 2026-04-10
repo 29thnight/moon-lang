@@ -9,6 +9,11 @@ use std::collections::HashMap;
 /// Lower a PrSM file to C# IR.
 pub fn lower_file(file: &File) -> CsFile {
     let mut usings = lower_usings(&file.usings);
+    if file_requires_input_system_namespace(file)
+        && !usings.iter().any(|u| u == "UnityEngine.InputSystem")
+    {
+        usings.push("UnityEngine.InputSystem".into());
+    }
     let (class, extra_types) = lower_decl(&file.decl);
 
     // Issue #26: a `typealias Name = Target` declaration emits a C#
@@ -42,10 +47,35 @@ fn lower_usings(usings: &[UsingDecl]) -> Vec<String> {
     result
 }
 
+fn file_requires_input_system_namespace(file: &File) -> bool {
+    decl_requires_input_system_namespace(&file.decl)
+}
+
+fn decl_requires_input_system_namespace(decl: &Decl) -> bool {
+    match decl {
+        Decl::Component { members, .. }
+        | Decl::Asset { members, .. }
+        | Decl::Class { members, .. } => members.iter().any(member_requires_input_system_namespace),
+        Decl::Struct { members, .. } | Decl::Extension { members, .. } => {
+            members.iter().any(member_requires_input_system_namespace)
+        }
+        Decl::DataClass { members, .. } => members.iter().any(member_requires_input_system_namespace),
+        Decl::Enum { .. }
+        | Decl::Attribute { .. }
+        | Decl::Interface { .. }
+        | Decl::TypeAlias { .. } => false,
+    }
+}
+
+fn member_requires_input_system_namespace(member: &Member) -> bool {
+    member_uses_new_input(member) || member_has_input_actions_annotation(member)
+}
+
 fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
     match decl {
         Decl::Component { name, is_singleton, is_partial, base_class, interfaces, members, .. } => {
             let mut cs_members = Vec::new();
+            let mut class_attributes = Vec::new();
             let callable_signatures = collect_callable_signatures(members);
             let member_type_env = collect_member_type_env(members);
             let (require_fields, optional_fields, child_fields, parent_fields, pool_fields, user_awake) =
@@ -259,25 +289,52 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
                 cs_members.extend(cleanup_methods(&listen_ctx.records));
             }
 
-            // v2 New Input System sugar: if any method uses input.action(...), inject
-            // a `private PlayerInput _prsmInput;` field and `_prsmInput = GetComponent<PlayerInput>()`
-            // in Awake.
+            // v2 New Input System sugar: if the component uses input sugar or binds
+            // an external InputActionAsset via @inputActions(...), inject PlayerInput
+            // infrastructure into the generated component.
             let uses_input_system = members.iter().any(member_uses_new_input);
-            if uses_input_system {
+            let input_actions_binding = collect_input_actions_binding(members);
+            let needs_player_input = uses_input_system || input_actions_binding.is_some();
+            if needs_player_input {
+                class_attributes.push(
+                    "[UnityEngine.RequireComponent(typeof(UnityEngine.InputSystem.PlayerInput))]"
+                        .into(),
+                );
                 // Insert the PlayerInput backing field before the first method/property.
                 let field_pos = cs_members.iter().position(|m| matches!(m, CsMember::Method { .. } | CsMember::Property { .. })).unwrap_or(cs_members.len());
                 cs_members.insert(field_pos, CsMember::Field {
                     attributes: vec![],
                     modifiers: "private".into(),
-                    ty: "PlayerInput".into(),
+                    ty: "UnityEngine.InputSystem.PlayerInput".into(),
                     name: PRSM_INPUT_FIELD.into(),
                     init: None,
                 });
+                if let Some(binding) = input_actions_binding {
+                    if let Some(default_map) = binding.default_action_map {
+                        inject_or_synthesize(
+                            &mut cs_members,
+                            "Awake",
+                            &format!(
+                                "{}.defaultActionMap = \"{}\"",
+                                PRSM_INPUT_FIELD,
+                                escape_csharp_string_literal(&default_map)
+                            ),
+                        );
+                    }
+                    inject_or_synthesize(
+                        &mut cs_members,
+                        "Awake",
+                        &format!("{}.actions = {}", PRSM_INPUT_FIELD, binding.field_name),
+                    );
+                }
                 // Inject `_prsmInput = GetComponent<PlayerInput>();` into Awake.
                 inject_or_synthesize(
                     &mut cs_members,
                     "Awake",
-                    &format!("{} = GetComponent<PlayerInput>();", PRSM_INPUT_FIELD),
+                    &format!(
+                        "{} = GetComponent<UnityEngine.InputSystem.PlayerInput>()",
+                        PRSM_INPUT_FIELD
+                    ),
                 );
             }
 
@@ -350,7 +407,7 @@ fn lower_decl(decl: &Decl) -> (CsClass, Vec<CsClass>) {
 
             (
                 CsClass {
-                    attributes: vec![],
+                    attributes: class_attributes,
                     modifiers,
                     name: name.clone(),
                     base_class: Some(base_class.clone()),
@@ -1166,6 +1223,74 @@ fn has_field_annotation(annotations: &[Annotation]) -> bool {
     annotations.iter().any(|a| a.name == "field")
 }
 
+#[derive(Debug, Clone)]
+struct InputActionsBinding {
+    field_name: String,
+    default_action_map: Option<String>,
+}
+
+fn collect_input_actions_binding(members: &[Member]) -> Option<InputActionsBinding> {
+    members.iter().find_map(|member| {
+        let Member::SerializeField {
+            annotations,
+            name,
+            ty,
+            ..
+        } = member
+        else {
+            return None;
+        };
+        if !type_ref_is_input_action_asset(ty) {
+            return None;
+        }
+        let annotation = annotations
+            .iter()
+            .find(|annotation| annotation.name == "inputActions")?;
+        Some(InputActionsBinding {
+            field_name: name.clone(),
+            default_action_map: annotation_default_action_map(annotation),
+        })
+    })
+}
+
+fn member_has_input_actions_annotation(member: &Member) -> bool {
+    matches!(
+        member,
+        Member::SerializeField { annotations, .. }
+            if annotations.iter().any(|annotation| annotation.name == "inputActions")
+    )
+}
+
+fn annotation_default_action_map(annotation: &Annotation) -> Option<String> {
+    annotation
+        .arg_names
+        .iter()
+        .zip(annotation.args.iter())
+        .find_map(|(name, value)| {
+            if name.as_deref() == Some("defaultMap") {
+                if let Expr::StringLit(value, _) = value {
+                    return Some(value.clone());
+                }
+            }
+            None
+        })
+        .or_else(|| annotation.args.first().and_then(|value| match value {
+            Expr::StringLit(value, _) => Some(value.clone()),
+            _ => None,
+        }))
+}
+
+fn type_ref_is_input_action_asset(ty: &TypeRef) -> bool {
+    matches!(
+        lower_type(ty).as_str(),
+        "InputActionAsset" | "UnityEngine.InputSystem.InputActionAsset"
+    )
+}
+
+fn is_compiler_only_annotation(annotation: &Annotation) -> bool {
+    matches!(annotation.name.as_str(), "inputActions")
+}
+
 /// Lower an `event NAME : (Args) => Unit` member into a C# `event Action<...>` field.
 fn lower_event_member(m: &Member) -> Vec<CsMember> {
     let Member::Event { visibility, name, ty, .. } = m else { return vec![]; };
@@ -1256,7 +1381,7 @@ fn lower_field_member(m: &Member) -> Vec<CsMember> {
             if has_field_annotation(annotations) {
                 let mut attrs = vec!["[SerializeField]".into()];
                 for ann in annotations {
-                    if ann.name != "field" {
+                    if ann.name != "field" && !is_compiler_only_annotation(ann) {
                         attrs.push(lower_annotation(ann));
                     }
                 }
@@ -1272,7 +1397,9 @@ fn lower_field_member(m: &Member) -> Vec<CsMember> {
             let backing = format!("_{}", name);
             let mut attrs = vec!["[SerializeField]".into()];
             for ann in annotations {
-                attrs.push(lower_annotation(ann));
+                if !is_compiler_only_annotation(ann) {
+                    attrs.push(lower_annotation(ann));
+                }
             }
 
             let mut result = vec![

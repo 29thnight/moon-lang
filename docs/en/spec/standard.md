@@ -1780,8 +1780,9 @@ _prsmInput.actions["Gameplay/Fire"].WasPressedThisFrame()
 
 When the compiler detects input sugar in a component, it shall generate:
 
-1. A private field: `private PlayerInput _prsmInput;`
-2. A `GetComponent<PlayerInput>()` call merged into the generated `Awake()` body before user statements.
+1. A class attribute: `[UnityEngine.RequireComponent(typeof(UnityEngine.InputSystem.PlayerInput))]`
+2. A private field: `private UnityEngine.InputSystem.PlayerInput _prsmInput;`
+3. A `GetComponent<UnityEngine.InputSystem.PlayerInput>()` call merged into the generated `Awake()` body before user statements.
 
 ### 10.13 `intrinsic` Block
 
@@ -1924,7 +1925,7 @@ For `var` fields, the property shall have both a getter and a setter.
 When a component declares `require`, `optional`, `child`, or `parent` fields, the compiler shall generate a single `Awake()` method with the following phase order:
 
 1. **Phase 1 -- Dependency resolution.** Resolve all injection fields in declaration order. `require` fields are checked for null; failure logs an error and disables the component via `enabled = false; return;`.
-2. **Phase 2 -- Input infrastructure.** If input sugar is present, emit `_prsmInput = GetComponent<PlayerInput>()`.
+2. **Phase 2 -- Input infrastructure.** If input sugar is present, emit `_prsmInput = GetComponent<UnityEngine.InputSystem.PlayerInput>()`.
 3. **Phase 3 -- Listen registration.** Emit `AddListener` calls for all `listen` statements.
 4. **Phase 4 -- User `awake` body.** Emit the user's `awake` block, if present.
 
@@ -2031,10 +2032,12 @@ switch (result.Tag) {
 ### 12.9 Input System Lowering
 When a component uses input system sugar, the compiler shall:
 
-1. Emit a private field: `private PlayerInput _prsmInput;`
-2. Emit `_prsmInput = GetComponent<PlayerInput>();` in Awake Phase 2.
-3. Replace each `input.action("Name").accessor` with `_prsmInput.actions["Name"].Method()`.
-4. For the player form `input.player("Map").action("Name").accessor`, compose the key as `"Map/Name"`.
+1. Emit `[UnityEngine.RequireComponent(typeof(UnityEngine.InputSystem.PlayerInput))]` on the generated component type.
+2. Emit a private field: `private UnityEngine.InputSystem.PlayerInput _prsmInput;`
+3. Emit `_prsmInput = GetComponent<UnityEngine.InputSystem.PlayerInput>();` in Awake Phase 2.
+4. Replace each `input.action("Name").accessor` with `_prsmInput.actions["Name"].Method()`.
+5. For the player form `input.player("Map").action("Name").accessor`, compose the key as `"Map/Name"`.
+6. If a serialized `InputActionAsset` field is annotated with `@inputActions(...)`, emit `_prsmInput.actions = <field>;` during Awake Phase 2 and, when `defaultMap` is provided, also emit `_prsmInput.defaultActionMap = "<value>";`.
 
 ---
 
