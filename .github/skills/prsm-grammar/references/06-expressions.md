@@ -189,19 +189,26 @@ Debug.Log(variable);
 
 ### input
 
+Legacy Input:
+
 ```prsm
 val h = input.axis("Horizontal")
-val jumped = input.action("Jump").pressed
 ```
 ```csharp
 var h = Input.GetAxis("Horizontal");
-var jumped = Input.GetButtonDown("Jump");
 ```
 
-New Input System:
+New Input System (requires `features = ["input-system"]`):
 
 ```prsm
-val move = input.player("Player").action("Move").readValue<Vector2>()
+val jumped = input.action("Jump").pressed
+val move = input.action("Move").vector2
+val aim = input.map("Gameplay").action("Aim").scalar
+```
+```csharp
+var jumped = InputSystem.actions.FindAction("Jump").WasPressedThisFrame();
+var move = InputSystem.actions.FindAction("Move").ReadValue<UnityEngine.Vector2>();
+var aim = InputSystem.actions.FindAction("Gameplay/Aim").ReadValue<float>();
 ```
 
 ### get<T>() / find<T>()

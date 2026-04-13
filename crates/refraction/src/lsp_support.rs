@@ -1089,17 +1089,21 @@ const COLLISION_MEMBERS: &[CoreMember] = &[
 ];
 
 const INPUT_MEMBERS: &[CoreMember] = &[
-    CoreMember { name: "axis", kind: CompletionEntryKind::Method, signature: "axis(axisName: String): Float", description: "Gets an axis value." },
-    CoreMember { name: "getAxis", kind: CompletionEntryKind::Method, signature: "getAxis(axisName: String): Float", description: "Gets a smoothed axis value." },
-    CoreMember { name: "getAxisRaw", kind: CompletionEntryKind::Method, signature: "getAxisRaw(axisName: String): Float", description: "Gets a raw axis value." },
-    CoreMember { name: "getButton", kind: CompletionEntryKind::Method, signature: "getButton(buttonName: String): Bool", description: "Returns whether a named button is held." },
-    CoreMember { name: "getButtonDown", kind: CompletionEntryKind::Method, signature: "getButtonDown(buttonName: String): Bool", description: "Returns whether a named button was pressed this frame." },
-    CoreMember { name: "getKey", kind: CompletionEntryKind::Method, signature: "getKey(key: KeyCode): Bool", description: "Returns whether a key is held." },
-    CoreMember { name: "getKeyDown", kind: CompletionEntryKind::Method, signature: "getKeyDown(key: KeyCode): Bool", description: "Returns whether a key was pressed this frame." },
-    CoreMember { name: "getMouseButton", kind: CompletionEntryKind::Method, signature: "getMouseButton(button: Int): Bool", description: "Returns whether a mouse button is held." },
-    CoreMember { name: "getMouseButtonDown", kind: CompletionEntryKind::Method, signature: "getMouseButtonDown(button: Int): Bool", description: "Returns whether a mouse button was pressed this frame." },
-    CoreMember { name: "mousePosition", kind: CompletionEntryKind::Property, signature: "mousePosition: Vector3", description: "Mouse position." },
-    CoreMember { name: "anyKeyDown", kind: CompletionEntryKind::Property, signature: "anyKeyDown: Bool", description: "Whether any key or mouse button was pressed this frame." },
+    // New Input System (requires features = ["input-system"])
+    CoreMember { name: "action", kind: CompletionEntryKind::Method, signature: "action(actionName: String): InputAction", description: "Queries a named action (New Input System). Chain with .pressed, .released, .held, .vector2, .scalar." },
+    CoreMember { name: "map", kind: CompletionEntryKind::Method, signature: "map(mapName: String): InputActionMap", description: "Selects an action map (New Input System). Chain with .action(name)." },
+    // Legacy Input (UnityEngine.Input)
+    CoreMember { name: "axis", kind: CompletionEntryKind::Method, signature: "axis(axisName: String): Float", description: "Gets an axis value (legacy)." },
+    CoreMember { name: "getAxis", kind: CompletionEntryKind::Method, signature: "getAxis(axisName: String): Float", description: "Gets a smoothed axis value (legacy)." },
+    CoreMember { name: "getAxisRaw", kind: CompletionEntryKind::Method, signature: "getAxisRaw(axisName: String): Float", description: "Gets a raw axis value (legacy)." },
+    CoreMember { name: "getButton", kind: CompletionEntryKind::Method, signature: "getButton(buttonName: String): Bool", description: "Returns whether a named button is held (legacy)." },
+    CoreMember { name: "getButtonDown", kind: CompletionEntryKind::Method, signature: "getButtonDown(buttonName: String): Bool", description: "Returns whether a named button was pressed this frame (legacy)." },
+    CoreMember { name: "getKey", kind: CompletionEntryKind::Method, signature: "getKey(key: KeyCode): Bool", description: "Returns whether a key is held (legacy)." },
+    CoreMember { name: "getKeyDown", kind: CompletionEntryKind::Method, signature: "getKeyDown(key: KeyCode): Bool", description: "Returns whether a key was pressed this frame (legacy)." },
+    CoreMember { name: "getMouseButton", kind: CompletionEntryKind::Method, signature: "getMouseButton(button: Int): Bool", description: "Returns whether a mouse button is held (legacy)." },
+    CoreMember { name: "getMouseButtonDown", kind: CompletionEntryKind::Method, signature: "getMouseButtonDown(button: Int): Bool", description: "Returns whether a mouse button was pressed this frame (legacy)." },
+    CoreMember { name: "mousePosition", kind: CompletionEntryKind::Property, signature: "mousePosition: Vector3", description: "Mouse position (legacy)." },
+    CoreMember { name: "anyKeyDown", kind: CompletionEntryKind::Property, signature: "anyKeyDown: Bool", description: "Whether any key or mouse button was pressed this frame (legacy)." },
 ];
 
 const TIME_MEMBERS: &[CoreMember] = &[

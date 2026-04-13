@@ -70,6 +70,11 @@ pub struct ProjectBuildReport {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct BuildCacheManifest {
     version: u32,
+    /// Compiler version that wrote this manifest. A version mismatch
+    /// invalidates all cache entries so compiler upgrades always trigger
+    /// a full rebuild.
+    #[serde(default)]
+    compiler_version: Option<String>,
     files: HashMap<String, BuildCacheEntry>,
 }
 
@@ -619,9 +624,15 @@ fn build_project_incremental(
     cache_dir: &Path,
     input_system_enabled: bool,
 ) -> Result<DriverReport, String> {
+    let current_compiler_version = env!("CARGO_PKG_VERSION");
     let previous_manifest = load_build_cache_manifest(cache_dir);
+    let compiler_version_match = previous_manifest
+        .compiler_version
+        .as_deref()
+        == Some(current_compiler_version);
     let mut next_manifest = BuildCacheManifest {
         version: 1,
+        compiler_version: Some(current_compiler_version.to_string()),
         files: HashMap::new(),
     };
     let mut results = Vec::new();
@@ -655,21 +666,22 @@ fn build_project_incremental(
         let output_path = output_path_for_source(file, Some(output_dir));
         let source_map_path = source_map::source_map_path_for_generated(&output_path);
 
-        let cache_hit = previous_manifest
-            .files
-            .get(&cache_key)
-            .map(|entry| {
-                // Issue #85: a cache entry is only a hit if BOTH the
-                // file's own hash AND the project hash match. Old
-                // manifests without `project_hash` are treated as
-                // misses so the first build after upgrade re-emits
-                // every file cleanly.
-                entry.source_hash == source_hash
-                    && entry.project_hash.as_deref() == Some(project_hash.as_str())
-                    && output_path.exists()
-                    && source_map_path.exists()
-            })
-            .unwrap_or(false);
+        let cache_hit = compiler_version_match
+            && previous_manifest
+                .files
+                .get(&cache_key)
+                .map(|entry| {
+                    // Issue #85: a cache entry is only a hit if BOTH the
+                    // file's own hash AND the project hash match. Old
+                    // manifests without `project_hash` are treated as
+                    // misses so the first build after upgrade re-emits
+                    // every file cleanly.
+                    entry.source_hash == source_hash
+                        && entry.project_hash.as_deref() == Some(project_hash.as_str())
+                        && output_path.exists()
+                        && source_map_path.exists()
+                })
+                .unwrap_or(false);
 
         if cache_hit {
             results.push(FileResult {
@@ -724,6 +736,16 @@ fn output_path_for_source(source_path: &Path, output_dir: Option<&Path>) -> Path
         out_dir.join(format!("{}.cs", file_name))
     } else {
         source_path.with_extension("cs")
+    }
+}
+
+/// Clear the build cache for a project so the next build recompiles everything.
+/// Used by `prism build --rebuild`.
+pub fn clear_build_cache(start_dir: &Path) {
+    if let Ok(graph) = ProjectGraph::discover(start_dir) {
+        if graph.cache_dir.exists() {
+            let _ = fs::remove_dir_all(&graph.cache_dir);
+        }
     }
 }
 

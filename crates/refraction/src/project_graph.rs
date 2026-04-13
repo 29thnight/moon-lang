@@ -86,7 +86,14 @@ impl ProjectGraph {
     pub fn discover(start_dir: &Path) -> Result<Self, String> {
         let (config, project_root) = PrismProject::find_and_load(start_dir)?;
         let language_version = LanguageVersion::parse(&config.language.version)?;
-        let enabled_features = parse_language_features(&config.language.features)?;
+        // Accept features from either [language].features (canonical) or
+        // [compiler].features (legacy fallback for older .prsmproject files).
+        let feature_source = if !config.language.features.is_empty() {
+            &config.language.features
+        } else {
+            &config.compiler.features
+        };
+        let enabled_features = parse_language_features(feature_source)?;
         let source_files = config.collect_sources(&project_root);
         let watch_roots = collect_watch_roots(&config, &project_root);
         let unity_capabilities = detect_unity_capabilities(&project_root);

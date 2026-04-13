@@ -10,8 +10,9 @@ nav_order: 9
 (since PrSM 2)
 
 PrSM v2 introduces syntactic sugar for Unity's **New Input System** package,
-giving you a concise, declarative way to query action states without writing
-boilerplate `PlayerInput` or `InputAction` code by hand.
+giving you a concise, declarative way to query action states. The generated code
+uses Unity's project-wide **Actions workflow** (`InputSystem.actions`), so you
+do not need a `PlayerInput` component for basic usage.
 
 ## Feature Gate
 
@@ -34,40 +35,9 @@ error[E070]: input-system sugar requires `features = ["input-system"]` in .prsmp
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ```
 
-## Asset Wiring
-
-To drive the sugar from an external `.inputactions` asset, annotate a serialized
-`InputActionAsset` field:
-
-```prsm
-@inputActions(defaultMap: "Gameplay")
-serialize controls: InputActionAsset
-```
-
-The annotation is compiler-only. It does not lower to a C# attribute. Instead,
-the compiler treats the field as the source for `PlayerInput.actions` and, when
-`defaultMap` is present, also assigns `PlayerInput.defaultActionMap`.
-
-Generated wiring:
-
-```csharp
-[UnityEngine.RequireComponent(typeof(UnityEngine.InputSystem.PlayerInput))]
-private UnityEngine.InputSystem.PlayerInput _prsmInput;
-
-void Awake()
-{
-    _prsmInput = GetComponent<UnityEngine.InputSystem.PlayerInput>();
-    _prsmInput.actions = controls;
-    _prsmInput.defaultActionMap = "Gameplay";
-}
-```
-
-This keeps the asset reference Inspector-friendly while ensuring the generated
-component always has a `PlayerInput` dependency.
-
 ## Basic Form
 
-The basic form queries a named action from the default action map:
+The basic form queries a named action from the project-wide action asset:
 
 ```prsm
 input.action("ActionName").state
@@ -88,28 +58,48 @@ func update() {
 }
 ```
 
-## Player Form (Multiplayer)
+Generated C#:
 
-For multiplayer scenarios where each player has their own action map, use the
-player form. This specifies both the map name and the action name:
+```csharp
+if (InputSystem.actions.FindAction("Jump").WasPressedThisFrame())
+{
+    Jump();
+}
 
-```prsm
-input.player("MapName").action("ActionName").state
+var move = InputSystem.actions.FindAction("Move").ReadValue<UnityEngine.Vector2>();
+transform.Translate(move.x, 0, move.y);
 ```
 
-The player form generates a lookup key in the format `"Map/Action"`, so the
-compiler translates `input.player("Gameplay").action("Fire").pressed` into a
-lookup against `_prsmInput.actions["Gameplay/Fire"]`.
+## Map Form (Explicit Action Map)
+
+When you need to target a specific action map, use the map form. This is useful
+when multiple maps contain actions with the same name:
+
+```prsm
+input.map("MapName").action("ActionName").state
+```
+
+The map form generates a `"Map/Action"` lookup key passed to `FindAction`:
+
+```prsm
+input.map("Gameplay").action("Fire").pressed
+```
+
+Generated C#:
+
+```csharp
+InputSystem.actions.FindAction("Gameplay/Fire").WasPressedThisFrame()
+```
 
 ### Example
 
 ```prsm
 func update() {
-    if input.player("Gameplay").action("Fire").pressed {
+    if input.map("Gameplay").action("Fire").pressed {
         fireWeapon()
     }
 
-    val look = input.player("Gameplay").action("Look").vector2
+    val look = input.map("Gameplay").action("Look").vector2
     rotateCameraBy(look)
 }
 ```
@@ -125,7 +115,7 @@ Returns `true` on the frame the action was first pressed.
 
 | PrSM | Generated C# |
 |---|---|
-| `input.action("Jump").pressed` | `_prsmInput.actions["Jump"].WasPressedThisFrame()` |
+| `input.action("Jump").pressed` | `InputSystem.actions.FindAction("Jump").WasPressedThisFrame()` |
 
 ### `.released`
 
@@ -133,7 +123,7 @@ Returns `true` on the frame the action was released.
 
 | PrSM | Generated C# |
 |---|---|
-| `input.action("Jump").released` | `_prsmInput.actions["Jump"].WasReleasedThisFrame()` |
+| `input.action("Jump").released` | `InputSystem.actions.FindAction("Jump").WasReleasedThisFrame()` |
 
 ### `.held`
 
@@ -141,7 +131,7 @@ Returns `true` every frame the action is continuously held down.
 
 | PrSM | Generated C# |
 |---|---|
-| `input.action("Crouch").held` | `_prsmInput.actions["Crouch"].IsPressed()` |
+| `input.action("Crouch").held` | `InputSystem.actions.FindAction("Crouch").IsPressed()` |
 
 ### `.vector2`
 
@@ -149,7 +139,7 @@ Reads the current value as a `Vector2`. Typical for movement or look sticks.
 
 | PrSM | Generated C# |
 |---|---|
-| `input.action("Move").vector2` | `_prsmInput.actions["Move"].ReadValue<UnityEngine.Vector2>()` |
+| `input.action("Move").vector2` | `InputSystem.actions.FindAction("Move").ReadValue<UnityEngine.Vector2>()` |
 
 ### `.scalar`
 
@@ -157,36 +147,48 @@ Reads the current value as a `float`. Useful for triggers or 1D axes.
 
 | PrSM | Generated C# |
 |---|---|
-| `input.action("Throttle").scalar` | `_prsmInput.actions["Throttle"].ReadValue<float>()` |
+| `input.action("Throttle").scalar` | `InputSystem.actions.FindAction("Throttle").ReadValue<float>()` |
 
 ## Generated Infrastructure
 
-When the compiler detects input sugar in a class, it automatically generates
-the backing infrastructure so you never need to declare it yourself:
+When the compiler detects input sugar in a class, it automatically adds:
 
-1. A private field on the class:
+```csharp
+using UnityEngine.InputSystem;
+```
 
-   ```csharp
-   private UnityEngine.InputSystem.PlayerInput _prsmInput;
-   ```
+No `PlayerInput` component or backing field is injected. The sugar uses
+`InputSystem.actions` which accesses the project-wide action asset configured in
+**Edit > Project Settings > Input System Package**.
 
-2. A class-level dependency marker:
+## Asset Wiring (Advanced)
 
-   ```csharp
-   [UnityEngine.RequireComponent(typeof(UnityEngine.InputSystem.PlayerInput))]
-   ```
+If you need to drive the sugar from a specific `.inputactions` asset through a
+`PlayerInput` component, annotate a serialized `InputActionAsset` field:
 
-3. Initialization inside `Awake` (or a merged `Awake` if one already exists):
+```prsm
+@inputActions(defaultMap: "Gameplay")
+serialize controls: InputActionAsset
+```
 
-   ```csharp
-   void Awake()
-   {
-       _prsmInput = GetComponent<UnityEngine.InputSystem.PlayerInput>();
-   }
-   ```
+The annotation is compiler-only. It does not lower to a C# attribute. When
+present, the compiler injects `PlayerInput` infrastructure:
 
-If the class already has an `awake()` function in PrSM, the compiler merges the
-`GetComponent` call into the generated `Awake` body before any user statements.
+```csharp
+[UnityEngine.RequireComponent(typeof(UnityEngine.InputSystem.PlayerInput))]
+private UnityEngine.InputSystem.PlayerInput _prsmInput;
+
+void Awake()
+{
+    _prsmInput = GetComponent<UnityEngine.InputSystem.PlayerInput>();
+    _prsmInput.actions = controls;
+    _prsmInput.defaultActionMap = "Gameplay";
+}
+```
+
+Note that even with `@inputActions`, the `input.action()` sugar still generates
+`InputSystem.actions.FindAction(...)` calls. The annotation is for wiring the
+asset to the `PlayerInput` component for callback-based workflows.
 
 ## Error E070
 

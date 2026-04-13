@@ -3488,7 +3488,7 @@ fn v2_val_destructure_binding() {
 
 #[test]
 fn v2_new_input_system_action_pressed() {
-    // `input.action("Jump").pressed` with feature enabled → PlayerInput field + WasPressedThisFrame
+    // `input.action("Jump").pressed` with feature enabled → InputSystem.actions.FindAction (no PlayerInput)
     let root = unique_temp_dir("prism_new_input_pressed_smoke");
     write_file(
         &root.join(".prsmproject"),
@@ -3535,15 +3535,16 @@ exclude = []
     assert_eq!(json["errors"], 0, "expected 0 errors; got {}", json["errors"]);
 
     let cs = fs::read_to_string(root.join("Generated").join("PrSM").join("Player.cs")).unwrap();
-    // PlayerInput backing field injected
-    assert!(cs.contains("PlayerInput _prsmInput"), "missing PlayerInput field:\n{cs}");
-    // GetComponent<PlayerInput> in Awake
+    // No PlayerInput for basic input.action() usage
+    assert!(!cs.contains("PlayerInput"), "should NOT inject PlayerInput for basic input sugar:\n{cs}");
+    assert!(!cs.contains("_prsmInput"), "should NOT inject _prsmInput field:\n{cs}");
+    // Uses null-safe InputSystem.actions?.FindAction
     assert!(
-        cs.contains("GetComponent<UnityEngine.InputSystem.PlayerInput>()"),
-        "missing GetComponent:\n{cs}"
+        cs.contains(r#"InputSystem.actions?.FindAction("Jump")?.WasPressedThisFrame() ?? false)"#),
+        "missing null-safe InputSystem.actions.FindAction call:\n{cs}"
     );
-    // WasPressedThisFrame call lowered correctly
-    assert!(cs.contains("WasPressedThisFrame"), "missing WasPressedThisFrame:\n{cs}");
+    // using UnityEngine.InputSystem is present
+    assert!(cs.contains("using UnityEngine.InputSystem;"), "missing using statement:\n{cs}");
 
     let _ = fs::remove_dir_all(root);
 }

@@ -37,6 +37,10 @@ pub struct CompilerSection {
     pub output_dir: String,
     #[serde(default)]
     pub target_unity: String,
+    /// Legacy fallback: some projects put `features` under `[compiler]`
+    /// instead of `[language]`. Accepted here for backward compatibility.
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 impl Default for CompilerSection {
@@ -45,6 +49,7 @@ impl Default for CompilerSection {
             prism_path: default_prism_path(),
             output_dir: default_output_dir(),
             target_unity: String::new(),
+            features: Vec::new(),
         }
     }
 }

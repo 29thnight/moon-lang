@@ -56,6 +56,10 @@ enum Commands {
         /// Watch for file changes and rebuild automatically
         #[arg(long)]
         watch: bool,
+
+        /// Clear cache and recompile all files from scratch
+        #[arg(long)]
+        rebuild: bool,
     },
 
     /// Emit Typed HIR for a file or project
@@ -299,8 +303,11 @@ fn main() {
                 process::exit(1);
             }
         }
-        Commands::Build { json, watch } => {
+        Commands::Build { json, watch, rebuild } => {
             let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+            if rebuild {
+                driver::clear_build_cache(&cwd);
+            }
             let build = match driver::build_project(&cwd) {
                 Ok(build) => build,
                 Err(error) => {

@@ -465,19 +465,34 @@ component PlayerHealth : MonoBehaviour {
         assert!(output.contains("GetComponent<Rigidbody>()"), "should infer Rigidbody generic arg");
     }
 
-    // ── v2 input system player form test ──────────────────────────
+    // ── v2 input system map form test ───────────────────────────
 
     #[test]
-    fn test_input_player_action_vector2() {
+    fn test_input_map_action_vector2() {
         let src = r#"component Foo : MonoBehaviour {
   update {
-    val look = input.player("Gameplay").action("Look").vector2
+    val look = input.map("Gameplay").action("Look").vector2
   }
 }"#;
         let output = compile(src);
-        assert!(output.contains("PlayerInput"), "should inject PlayerInput field");
-        assert!(output.contains(r#"actions["Gameplay/Look"].ReadValue<UnityEngine.Vector2>()"#),
-            "should generate player/action lookup with map prefix");
+        assert!(!output.contains("PlayerInput"), "should NOT inject PlayerInput for basic input sugar");
+        assert!(output.contains(r#"InputSystem.actions?.FindAction("Gameplay/Look")?.ReadValue<UnityEngine.Vector2>() ?? default)"#),
+            "should generate null-safe FindAction with map/action lookup key");
+    }
+
+    #[test]
+    fn test_input_action_no_player_input() {
+        let src = r#"component Foo : MonoBehaviour {
+  update {
+    if input.action("Jump").pressed { jump() }
+  }
+}"#;
+        let output = compile(src);
+        assert!(!output.contains("PlayerInput"), "should NOT inject PlayerInput for basic input.action()");
+        assert!(!output.contains("_prsmInput"), "should NOT generate _prsmInput field");
+        assert!(!output.contains("RequireComponent"), "should NOT add RequireComponent");
+        assert!(output.contains(r#"InputSystem.actions?.FindAction("Jump")?.WasPressedThisFrame() ?? false)"#),
+            "should generate null-safe InputSystem.actions.FindAction call");
     }
 
     // ── T2: listen multiple subscriptions & ordering ──────────────
@@ -499,7 +514,7 @@ component PlayerHealth : MonoBehaviour {
         let output = compile(src);
         assert!(
             output.contains("[UnityEngine.RequireComponent(typeof(UnityEngine.InputSystem.PlayerInput))]"),
-            "should add RequireComponent for PlayerInput: {}",
+            "should add RequireComponent for PlayerInput when @inputActions present: {}",
             output
         );
         assert!(
@@ -520,6 +535,11 @@ component PlayerHealth : MonoBehaviour {
         assert!(
             !output.contains("[InputActions"),
             "compiler-only annotation must not lower to a C# attribute: {}",
+            output
+        );
+        assert!(
+            output.contains("InputSystem.actions?.FindAction("),
+            "input sugar should use null-safe InputSystem.actions.FindAction: {}",
             output
         );
     }
@@ -571,7 +591,8 @@ component PlayerHealth : MonoBehaviour {
   }
 }"#;
         let output = compile(src);
-        assert!(output.contains("WasReleasedThisFrame()"), "should generate WasReleasedThisFrame");
+        assert!(output.contains(r#"InputSystem.actions?.FindAction("Jump")?.WasReleasedThisFrame() ?? false)"#),
+            "should generate null-safe FindAction + WasReleasedThisFrame");
     }
 
     #[test]
@@ -582,7 +603,8 @@ component PlayerHealth : MonoBehaviour {
   }
 }"#;
         let output = compile(src);
-        assert!(output.contains("IsPressed()"), "should generate IsPressed");
+        assert!(output.contains(r#"InputSystem.actions?.FindAction("Sprint")?.IsPressed() ?? false)"#),
+            "should generate null-safe FindAction + IsPressed");
     }
 
     #[test]
@@ -593,7 +615,8 @@ component PlayerHealth : MonoBehaviour {
   }
 }"#;
         let output = compile(src);
-        assert!(output.contains("ReadValue<float>()"), "should generate ReadValue<float>");
+        assert!(output.contains(r#"InputSystem.actions?.FindAction("Aim")?.ReadValue<float>() ?? 0f)"#),
+            "should generate null-safe FindAction + ReadValue<float>");
     }
 
     // ── v3 interface declaration ──────────────────────────────────

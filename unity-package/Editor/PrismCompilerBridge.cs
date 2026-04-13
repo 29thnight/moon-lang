@@ -33,6 +33,11 @@ namespace Prism.Editor
             return RunCompiler(ResolveCompilerPath(), "build --json");
         }
 
+        public static CompileResult RebuildProject()
+        {
+            return RunCompiler(ResolveCompilerPath(), "build --json --rebuild");
+        }
+
         public static string ResolveCompilerPath()
         {
             if (!string.IsNullOrWhiteSpace(_resolvedPath))

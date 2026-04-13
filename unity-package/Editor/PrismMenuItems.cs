@@ -65,7 +65,25 @@ namespace Prism.Editor
             }
         }
 
-        [MenuItem("PrSM/Refresh .prsmproject Cache", priority = 101)]
+        [MenuItem("PrSM/Rebuild Project", priority = 101)]
+        public static void RebuildProject()
+        {
+            PrismProjectSettings.EnsureProjectFile();
+
+            var result = PrismCompilerBridge.RebuildProject();
+            if (result.Success)
+            {
+                Debug.Log($"[PrSM] Rebuild succeeded — {result.Report.compiled} file(s) recompiled.");
+                AssetDatabase.Refresh();
+                PrismIconAssigner.AssignIconsToGeneratedScripts();
+            }
+            else
+            {
+                PrismCompilerBridge.LogDiagnostics(result);
+            }
+        }
+
+        [MenuItem("PrSM/Refresh .prsmproject Cache", priority = 200)]
         public static void RefreshCache()
         {
             PrismProjectSettings.ClearCache();

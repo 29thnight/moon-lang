@@ -913,6 +913,9 @@ impl Analyzer {
             Member::NestedDecl { decl, .. } => {
                 self.register_decl(decl);
             }
+            Member::ListenDecl { .. } => {
+                // Listen declarations are handled during body analysis, not registration.
+            }
         }
     }
 
@@ -1365,8 +1368,8 @@ impl Analyzer {
                 // The previous fall-through to `var` produced a false
                 // positive E148 inside `for i in 0 until 5 { yield i }`.
                 let elem_ty = match iterable {
-                    Expr::Range { start, .. } => {
-                        let t = self.analyze_expr(start);
+                    Expr::Range { start: Some(s), .. } => {
+                        let t = self.analyze_expr(s);
                         if t.is_error() {
                             PrismType::External("var".into())
                         } else {
@@ -1877,16 +1880,20 @@ impl Analyzer {
                 ..
             } => {
                 if let Some(recv) = receiver {
-                    // v2 feature gate: `input.action("X")` requires `input-system` feature.
-                    if name == "action" {
-                        if let Expr::Ident(id, _) = recv.as_ref() {
-                            if id == "input" && !self.input_system_enabled {
-                                self.diag.error(
-                                    "E070",
-                                    "New Input System sugar (`input.action(...)`) requires the `input-system` feature. Add `features = [\"input-system\"]` under `[language]` in your .prsmproject.",
-                                    *name_span,
-                                );
-                            }
+                    // v2 feature gate: `input.action("X")` and `input.map("M").action("X")`
+                    // require `input-system` feature.
+                    if name == "action" && !self.input_system_enabled {
+                        let is_direct = matches!(recv.as_ref(), Expr::Ident(id, _) if id == "input");
+                        let is_chained = matches!(recv.as_ref(),
+                            Expr::Call { receiver: Some(r), name: n, .. }
+                            if (n == "map" || n == "player") && matches!(r.as_ref(), Expr::Ident(id, _) if id == "input")
+                        );
+                        if is_direct || is_chained {
+                            self.diag.error(
+                                "E070",
+                                "New Input System sugar (`input.action(...)`) requires the `input-system` feature. Add `features = [\"input-system\"]` under `[language]` in your .prsmproject.",
+                                *name_span,
+                            );
                         }
                     }
                     let receiver_is_this = matches!(recv.as_ref(), Expr::This(_));
@@ -1922,11 +1929,9 @@ impl Analyzer {
                 PrismType::External("var".into())
             }
             Expr::Range { start, end, step, .. } => {
-                self.analyze_expr(start);
-                self.analyze_expr(end);
-                if let Some(s) = step {
-                    self.analyze_expr(s);
-                }
+                if let Some(s) = start { self.analyze_expr(s); }
+                if let Some(e) = end { self.analyze_expr(e); }
+                if let Some(s) = step { self.analyze_expr(s); }
                 PrismType::External("Range".into())
             }
             Expr::Is { expr, ty, .. } => {
@@ -2073,6 +2078,13 @@ impl Analyzer {
             Expr::ThrowExpr { exception, .. } => {
                 self.analyze_expr(exception);
                 PrismType::Error
+            }
+            Expr::TryExpr { try_block, catches, .. } => {
+                self.analyze_block(try_block);
+                for clause in catches {
+                    self.analyze_block(&clause.body);
+                }
+                PrismType::Unit
             }
         }
     }
